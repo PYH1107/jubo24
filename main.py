@@ -12,7 +12,7 @@ load_dotenv()
 app = FastAPI()
 
 password = os.getenv('MONGODB_PASSWORD')
-uri = f"mongodb+srv://maypan1107:{password}@cluster0.qk3cidq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+uri = f"mongodb+srv://ai-nerag:{password}@ai-nerag.iiltl.mongodb.net/?retryWrites=true&w=majority"
 
 # Create a new client and connect to the server
 client = MongoClient(uri, server_api=ServerApi('1'))
