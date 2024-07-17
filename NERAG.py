@@ -34,7 +34,7 @@ def read_health_data():
     else:
         for doc in documents:
             print(doc)
-            
+
 # 載入中研院 NER 模型
 def load_model_and_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("ckiplab/bert-base-chinese-ner")
