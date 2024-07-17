@@ -1,3 +1,4 @@
+'''
 def individual_serializer(todo) -> dict:
     return {
         "id":str(todo["_id"]),
@@ -8,3 +9,4 @@ def individual_serializer(todo) -> dict:
 
 def list_serial(todos) -> list:
     return{individual_serializer(todo) for todo in todos}
+'''
