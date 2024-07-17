@@ -3,10 +3,13 @@
 import os
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
+from fastapi import FastAPI
 
 # Load environment variables
 from dotenv import load_dotenv
 load_dotenv()
+
+app = FastAPI()
 
 password = os.getenv('MONGODB_PASSWORD')
 uri = f"mongodb+srv://maypan1107:{password}@cluster0.qk3cidq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
