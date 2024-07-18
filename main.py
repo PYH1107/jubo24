@@ -3,7 +3,8 @@
 import os
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from typing import List
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -26,12 +27,32 @@ except Exception as e:
     print(e)
 
 db = client['release']
-collection = db['patients']
+patients_collection = db["patients"]
+vitalsigns_collection = db["vitalsigns"]
 
-# 進行查詢
-query = {"lastName": "王", "firstName": {"$regex": "月$"}}
-results = collection.find(query)
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import List, Dict
+from pymongo import MongoClient
 
-# 打印結果
-for result in results:
-    print(result)
+app = FastAPI()
+
+class Name(BaseModel):
+    lastName: str
+    firstName: str
+
+
+@app.post("/search_patients_vitals", response_model=List[Dict])
+async def search_patients_vitals(name: Name):
+    query = {"lastName": name.lastName, "firstName": name.firstName}
+    patient_ids = patients_collection.find(query, {"_id": 1})
+    results = []
+    for patient in patient_ids:
+        patient_data = {"patient_id": str(patient["_id"])}
+        vitals = list(vitalsigns_collection.find({"patient_id": patient["_id"]}))
+        patient_data["vitals"] = vitals
+        results.append(patient_data)
+    if not results:
+        raise HTTPException(status_code=404, detail="No patient found")
+    return results
+

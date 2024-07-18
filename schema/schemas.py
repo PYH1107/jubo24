@@ -1,5 +1,5 @@
 '''
-def individual_serializer(todo) -> dict:
+def individual_serializer(patients) -> dict:
     return {
         "id":str(todo["_id"]),
         "name": todo["name"],
