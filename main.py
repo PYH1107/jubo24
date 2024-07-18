@@ -13,15 +13,16 @@ import re
 import jieba
 import jieba.analyse
 import jieba.posseg as pseg
+import requests
 
+app = FastAPI()
 
 # Load environment variables
 from dotenv import load_dotenv
 load_dotenv()
-
-app = FastAPI()
-
+API_KEY = os.getenv("API_KEY")  # 從環境變量中讀取 API_KEY
 password = os.getenv('MONGODB_PASSWORD')
+
 uri = f"mongodb+srv://ai-nerag:{password}@ai-nerag.iiltl.mongodb.net/?retryWrites=true&w=majority"
 
 # Create a new client and connect to the server
@@ -101,8 +102,23 @@ def extract_date(text):
     dates = re.findall(date_pattern, text)
     return dates
 
-@app.post("/extract_entities_dif")
-async def api_extract_entities(input: TextInput):
+def generate_summary(text_description):
+    url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}'
+    headers = {'Content-Type': 'application/json'}
+    data = {
+        "contents": [
+            {
+                "parts": [{"text": f"請為以下數據生成一個自然的摘要描述{{{text_description}}}"}]
+            }
+        ]
+    }
+    response = requests.post(url, headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+    return None
+
+@app.post("/full_process")
+async def full_process(input: TextInput):
     if not input.text:
         raise HTTPException(status_code=400, detail="Text input is required")
 
@@ -110,12 +126,12 @@ async def api_extract_entities(input: TextInput):
     person_names = extract_entities(results, 'PER')
     dates = extract_date(input.text)
 
-    keywords = extract_keywords(input.text, DB)  # 這裡要傳入 DB
+    processed_result = ProcessedResult(dates=dates, person_names=person_names)
+    summary = generate_summary_text(processed_result, input.text)
 
     return {
-        "dates": dates,
-        "person_names": person_names,
-        "keywords": keywords
+        "processed_result": processed_result,
+        "summary": summary
     }
 
 if __name__ == "__main__":
