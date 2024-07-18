@@ -60,11 +60,10 @@ def relative_date_to_absolute(relative_date):
     if relative_date == "今日":
         return today.strftime("%Y-%m-%d")
     elif relative_date == "昨日":
-        return (today - timedelta(days=1)).strftime("%Y-%m-%d")
+        return (today - timedelta(days=5)).strftime("%Y-%m-%d")
+    # 這邊改過了
     elif relative_date == "前天":
         return (today - timedelta(days=2)).strftime("%Y-%m-%d")
-    elif relative_date == "那天":
-        return (today - timedelta(days=5)).strftime("%Y-%m-%d")
     return None
 
 def generate_summary(text_description):
