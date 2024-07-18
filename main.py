@@ -82,24 +82,7 @@ def extract_entities(results, entity_type):
         entities.append("".join(current_entity))
     return entities
 
-'''
-# 這是如果沒有 keyword db 的寫法
-def extract_keywords(text, top_k=3):
-    # 使用 TF-IDF 提取關鍵詞
-    tfidf_keywords = jieba.analyse.extract_tags(text, topK=top_k)
 
-    # 使用 TextRank 提取關鍵詞
-    textrank_keywords = jieba.analyse.textrank(text, topK=top_k)
-
-    # 使用詞性標注提取名詞和動詞
-    words = pseg.cut(text)
-    pos_keywords = [word for word, flag in words if flag.startswith('n') or flag.startswith('v')]
-    pos_keywords = list(set(pos_keywords))[:top_k]
-
-    # 合併結果
-    all_keywords = list(set(tfidf_keywords + textrank_keywords + pos_keywords))
-    return all_keywords[:top_k]
-'''
 
 # 有 keyword DB
 def extract_keywords(text, db):

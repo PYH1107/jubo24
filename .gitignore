@@ -7,3 +7,6 @@
 
 # 忽略虛擬環境目錄
 venv/
+
+#忽略 .txt
+topk.txt
