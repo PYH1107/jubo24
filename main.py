@@ -4,7 +4,9 @@ import os
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from fastapi import FastAPI, HTTPException
-from typing import List
+from pydantic import BaseModel
+from typing import List, Dict
+
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -30,13 +32,7 @@ db = client['release']
 patients_collection = db["patients"]
 vitalsigns_collection = db["vitalsigns"]
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import List, Dict
-from pymongo import MongoClient
-
-app = FastAPI()
-
+#2.
 class Name(BaseModel):
     lastName: str
     firstName: str
@@ -55,4 +51,3 @@ async def search_patients_vitals(name: Name):
     if not results:
         raise HTTPException(status_code=404, detail="No patient found")
     return results
-
