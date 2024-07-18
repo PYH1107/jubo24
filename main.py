@@ -14,7 +14,6 @@ import jieba
 import jieba.analyse
 import jieba.posseg as pseg
 
-import spacy
 
 # Load environment variables
 from dotenv import load_dotenv
