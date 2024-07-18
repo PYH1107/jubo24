@@ -14,6 +14,8 @@ import jieba
 import jieba.analyse
 import jieba.posseg as pseg
 
+import spacy
+
 # Load environment variables
 from dotenv import load_dotenv
 load_dotenv()
@@ -85,6 +87,8 @@ def extract_entities(results, entity_type):
 
 
 # 有 keyword DB
+DB = ["生命跡象", "護理紀錄"]
+
 def extract_keywords(text, db):
     for keyword in db:
         jieba.add_word(keyword)
@@ -98,7 +102,7 @@ def extract_date(text):
     dates = re.findall(date_pattern, text)
     return dates
 
-@app.post("/extract_entities")
+@app.post("/extract_entities_dif")
 async def api_extract_entities(input: TextInput):
     if not input.text:
         raise HTTPException(status_code=400, detail="Text input is required")
@@ -106,12 +110,8 @@ async def api_extract_entities(input: TextInput):
     results = predict_and_extract_entities(input.text, tokenizer, model)
     person_names = extract_entities(results, 'PER')
     dates = extract_date(input.text)
-    # 沒有 keyword db
-    # keywords = extract_keywords(input.text)
 
-    # 假設我們有一個關鍵詞數據庫
-    keyword_db = set(["關鍵詞1", "關鍵詞2", "關鍵詞3"])  # 這裡需要替換為實際的關鍵詞數據庫
-    keywords = extract_keywords(input.text, keyword_db)
+    keywords = extract_keywords(input.text, DB)  # 這裡要傳入 DB
 
     return {
         "dates": dates,
@@ -124,24 +124,3 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
-'''
-#2.
-class Name(BaseModel):
-    lastName: str
-    firstName: str
-
-
-@app.post("/search_patients_vitals", response_model=List[Dict])
-async def search_patients_vitals(name: Name):
-    query = {"lastName": name.lastName, "firstName": name.firstName}
-    patient_ids = patients_collection.find(query, {"_id": 1})
-    results = []
-    for patient in patient_ids:
-        patient_data = {"patient_id": str(patient["_id"])}
-        vitals = list(vitalsigns_collection.find({"patient_id": patient["_id"]}))
-        patient_data["vitals"] = vitals
-        results.append(patient_data)
-    if not results:
-        raise HTTPException(status_code=404, detail="No patient found")
-    return results
-'''

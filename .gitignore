@@ -10,3 +10,4 @@ venv/
 
 #忽略 .txt
 topk.txt
+name_to_db.txt
