@@ -15,3 +15,6 @@ name_to_db.txt
 #忽略 __pyache__
 __pycache__/
 .ipynb_checkpoints/
+
+#忽略 schema
+/schema/
