@@ -21,3 +21,6 @@ __pycache__/
 
 #忽略測試文件
 try.py
+
+#忽略 @app.post文檔
+post.txt
