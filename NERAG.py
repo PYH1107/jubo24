@@ -71,7 +71,7 @@ def extract_entities(results, entity_type):
     return entities
 
 # 分詞並提取關鍵詞
-def extract_keywords(text, db):
+def extract_keywords(text, db): #db 在 DB 在第 179 行
     for keyword in db:
         jieba.add_word(keyword)
     words = jieba.lcut(text)
@@ -89,7 +89,7 @@ def relative_date_to_absolute(relative_date):
         return (today - timedelta(days=2)).strftime("%Y-%m-%d")
     else:
         return None
-    
+
     # 生成摘要描述
 def generate_summary(text_description, api_key):
     url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={api_key}'
@@ -108,7 +108,7 @@ def generate_summary(text_description, api_key):
         return text
     else:
         return None
-    
+
 def prepare_data():
     # 假資料生成，之後這段為真正的 DB
     data = {
@@ -163,7 +163,7 @@ def NERAG(text):
         return summary
     else:
         return "Failed to generate summary."
-    
+
 persons = '常小芬'
 absolute_dates = '2024-07-14'
 df = prepare_data()
