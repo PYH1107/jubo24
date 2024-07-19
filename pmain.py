@@ -138,7 +138,6 @@ def extract_date(text):
                             dates.append(formatted_date)
             except ValueError:
                 # 如果日期無效
-                return "日期無效"
                 continue
    
     dates = sorted(dates)  # 按日期排序
