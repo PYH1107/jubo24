@@ -163,31 +163,49 @@ def extract_date(text):
 
 # 3: 連接 DB
 
-#3-1 從 patient 中提取病人 id
-def prepare_data(firstname=None, lastname=None):
+# 3-1 从 patient 集合中提取病人 id
+def get_patient_id(firstname, lastname):
     patients_collection = db["patients"]
 
-    # 直接使用 firstname 和 lastname 作為查詢條件
     query = {
         "firstName": firstname,
         "lastName": lastname
     }
 
-    # 從 MongoDB 獲取數據
-    cursor = patients_collection.find(query)
+    patient = patients_collection.find_one(query)
 
-    # 將數據轉換為 DataFrame
+    if patient:
+        return patient.get('_id')  # 返回患者的 MongoDB _id
+    else:
+        return None
+
+# 3-2 通过 id 查找 vitalsigns
+def get_vitalsigns(patient_id):
+    vitalsign_collection = db["vitalsign"]
+
+    query = {
+        "patientId": patient_id
+    }
+
+    cursor = vitalsign_collection.find(query)
     df = pd.DataFrame(list(cursor))
 
-    # 如果 DataFrame 為空，返回空的 DataFrame
     if df.empty:
         return df
 
+    if '_id' in df.columns:
+        df['id'] = df['_id'].astype(str)
+        df = df.drop('_id', axis=1)
 
-# 3-2 透過 id 去找 vitalsigns
+    return df
 
-
-
+# 3-3 整合以上两个函数
+def prepare_patient_data(firstname, lastname):
+    patient_id = get_patient_id(firstname, lastname)
+    if patient_id:
+        return get_vitalsigns(patient_id)
+    else:
+        return pd.DataFrame()  # 如果没找到病人，返回空 DataFrame
 
 
 
@@ -218,29 +236,8 @@ def generate_summary(text_description):
         return response.json()["candidates"][0]["content"]["parts"][0]["text"]
     return None
 
+
 '''
-@app.post("/full_process")
-async def full_process(input: TextInput):
-    if not input.text:
-        raise HTTPException(status_code=400, detail="Text input is required")
-
-    results = predict_and_extract_entities(input.text, tokenizer, model)
-    person_names = extract_entities(results, 'PER')
-    dates = extract_date(input.text)
-
-    processed_result = ProcessedResult(dates=dates, person_names=person_names)
-    summary = generate_summary_text(processed_result, input.text)
-
-    return {
-        "processed_result": processed_result,
-        "summary": summary
-    }
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-'''
-
 @app.post("/extract_entities_dif")
 async def api_extract_entities(input: TextInput):
     if not input.text:
@@ -270,3 +267,16 @@ async def api_extract_entities(input: TextInput):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+    '''
+'''
+class PatientRequest(BaseModel):
+    firstName: str
+    lastName: str
+
+@app.post("/patient-vitalsigns")
+async def get_patient_vitalsigns(patient: PatientRequest):
+    data = prepare_patient_data(patient.firstName, patient.lastName)
+    if data.empty:
+        raise HTTPException(status_code=404, detail="Patient not found or no vitalsigns data available")
+    return data.to_dict(orient="records")
+'''
