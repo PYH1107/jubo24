@@ -101,10 +101,10 @@ def extract_date(text):
     date_patterns = [
         r'\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b',  # MM-DD-YYYY or MM/DD/YYYY
         r'\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYYY-MM-DD or YYYY/MM/DD
-        r'\b(\d{2,3})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYY-MM-DD or YYY/MM/DD (民國年)
         r'\b(\d{4})年(\d{1,2})月(\d{1,2})日\b',  # YYYY年MM月DD日
         r'\b(\d{1,2})月(\d{1,2})日(\d{4})年\b',  # MM月DD日YYYY年
         r'\b民國(\d{1,3})年(\d{1,2})月(\d{1,2})日\b',  # 民國YYY年MM月DD日
+        r'\b(\d{2,3})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYY-MM-DD or YYY/MM/DD (民國年)
     ]
    
     dates = []
@@ -174,6 +174,7 @@ def read_health_data():
     else:
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
+            #print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
             return doc["_id"]
 
 # 查找並打印 vitalsigns 集合中的文檔

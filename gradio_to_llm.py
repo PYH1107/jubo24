@@ -132,7 +132,7 @@ def generate_summary(text_description, api_key):
     data = {
         "contents": [
             {
-                "parts": [{"text": f"請為以下資料產生一個摘要描述生命體徵：{text_description}" +""}]
+                "parts": [{"text": f"請為XXX病人產生一個摘要描述生命體徵：{text_description}" +""}]
             }
         ]
     }
