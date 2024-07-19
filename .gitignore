@@ -15,3 +15,12 @@ name_to_db.txt
 #忽略 __pyache__
 __pycache__/
 .ipynb_checkpoints/
+
+#忽略 schema
+/schema/
+
+#忽略測試文件
+try.py
+
+#忽略 @app.post文檔
+post.txt
