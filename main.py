@@ -174,7 +174,6 @@ def read_health_data():
     else:
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
-            #print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
             return doc["_id"]
 
 # 查找並打印 vitalsigns 集合中的文檔
@@ -186,7 +185,8 @@ def read_vital_signs(patient_id, start_date, end_date):
             "$lte": datetime.strptime(end_date, "%Y-%m-%d")
         }
     }
-    documents = vitalsigns_collection.find(query)
+    projection = {"PR": 1, "RR": 1, "SYS": 1, "TP": 1, "DIA": 1, "SPO2": 1, "PAIN": 1,"createdDate": 1, "_id": 0}  # 投影指定欄位
+    documents = vitalsigns_collection.find(query, projection)
     if vitalsigns_collection.count_documents(query) == 0:
         print("No documents found in the specified date range.")
     else:
