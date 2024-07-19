@@ -13,6 +13,8 @@ import jieba.analyse
 import jieba.posseg as pseg
 from bson import ObjectId
 import json
+import uvicorn
+from fastapi.responses import HTMLResponse
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -193,6 +195,12 @@ def read_vital_signs(patient_id, start_date, end_date):
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
             print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            
+@app.get("/", response_class=HTMLResponse)
+async def get_home():
+    with open("index.html", "r", encoding="utf-8") as file:
+        html_content = file.read()
+    return HTMLResponse(content=html_content)
 
 @app.post("/extract_entities_dif")
 async def api_extract_entities(input: TextInput):
@@ -218,5 +226,4 @@ async def api_extract_entities(input: TextInput):
     }
 
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
