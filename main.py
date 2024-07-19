@@ -13,7 +13,6 @@ import jieba.analyse
 import jieba.posseg as pseg
 import requests
 
-<<<<<<< HEAD
 # Load environment variables
 from dotenv import load_dotenv
 load_dotenv()
@@ -21,14 +20,6 @@ load_dotenv()
 app = FastAPI()
 first_name=""
 last_name=""
-=======
-app = FastAPI()
-
-# Load environment variables
-from dotenv import load_dotenv
-load_dotenv()
-API_KEY = os.getenv("API_KEY")  # 從環境變量中讀取 API_KEY
->>>>>>> d905241fe6f5a4c113b0af36b6a79cb3d3091a95
 password = os.getenv('MONGODB_PASSWORD')
 
 uri = f"mongodb+srv://ai-nerag:{password}@ai-nerag.iiltl.mongodb.net/?retryWrites=true&w=majority"
@@ -186,14 +177,9 @@ async def full_process(input: TextInput):
     print("first_name=" + first_name)
 
     return {
-<<<<<<< HEAD
         "dates": dates,
         "person_names": name_parts,
         "keywords": keywords
-=======
-        "processed_result": processed_result,
-        "summary": summary
->>>>>>> d905241fe6f5a4c113b0af36b6a79cb3d3091a95
     }
 
 if __name__ == "__main__":
