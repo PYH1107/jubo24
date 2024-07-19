@@ -19,8 +19,6 @@ load_dotenv()
 
 
 app = FastAPI()
-first_name=""
-last_name=""
 password = os.getenv('MONGODB_PASSWORD')
 uri = f"mongodb+srv://ai-nerag:{password}@ai-nerag.iiltl.mongodb.net/?retryWrites=true&w=majority"
 
@@ -90,6 +88,7 @@ def extract_entities(results, entity_type):
 
 def extract_name_parts(full_name):
     # 假設中文名字格式：姓氏 + 名字
+    global first_name, last_name
     if len(full_name) > 1:
         last_name = full_name[0]
         first_name = full_name[1:]
@@ -138,7 +137,7 @@ def extract_date(text):
                         day = int(groups[2])
                     elif len(groups[0]) == 4:  # YYYY-MM-DD
                         year, month, day = map(int, groups)
-                    elif len(groups[2]) == 4:  # DD-MM-YYYY
+                    elif len(groups[2]) == 4:  # MM-DD-YYYY
                         month, day, year = map(int, groups)
                     else:  # YYY-MM-DD (民國年)
                         year = int(groups[0]) + 1911
@@ -163,13 +162,14 @@ async def api_extract_entities(input: TextInput):
     if not input.text:
         raise HTTPException(status_code=400, detail="Text input is required")
 
-
+    print("input.text" + input.text)
     results = predict_and_extract_entities(input.text, tokenizer, model)
     person_names = extract_entities(results, 'PER')
     dates = extract_date(input.text)
-
+    
 
     keywords = extract_keywords(input.text, DB)  # 這裡要傳入 DB
+
 
 
     name_parts = [extract_name_parts(name) for name in person_names]
