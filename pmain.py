@@ -1,35 +1,29 @@
-# 潘允蕙拿來實驗的半成品
-
-import os
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict
-from datetime import datetime
+from datetime import datetime, timedelta
 from transformers import AutoTokenizer, AutoModelForTokenClassification
 import torch
 import re
+import os
 import jieba
 import jieba.analyse
 import jieba.posseg as pseg
-import requests
-import pandas as pd
-
-# 第一部分: 環境
-app = FastAPI()
+from bson import ObjectId
+import json
 
 # Load environment variables
 from dotenv import load_dotenv
 load_dotenv()
-API_KEY = os.getenv("API_KEY")  # 從環境變量中讀取 API_KEY
-password = os.getenv('MONGODB_PASSWORD')
 
+app = FastAPI()
+password = os.getenv('MONGODB_PASSWORD')
 uri = f"mongodb+srv://ai-nerag:{password}@ai-nerag.iiltl.mongodb.net/?retryWrites=true&w=majority"
 
 # Create a new client and connect to the server
 client = MongoClient(uri)
-
 
 # Send a ping to confirm a successful connection
 try:
@@ -39,9 +33,8 @@ except Exception as e:
     print(e)
 
 db = client['release']
-
+patients_collection = db["patients"]
 vitalsigns_collection = db["vitalsigns"]
-
 
 # 載入中研院 NER 模型
 def load_model_and_tokenizer():
@@ -54,10 +47,6 @@ tokenizer, model = load_model_and_tokenizer()
 class TextInput(BaseModel):
     text: str
 
-
-# 第二部分: 提取
-
-# 2-1 labels
 def predict_and_extract_entities(text, tokenizer, model):
     inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
     outputs = model(**inputs)
@@ -88,21 +77,15 @@ def extract_entities(results, entity_type):
         entities.append("".join(current_entity))
     return entities
 
-
-# 2-2: 提取姓名，並區別姓氏與名字
-first_name=""
-last_name=""
 def extract_name_parts(full_name):
     # 假設中文名字格式：姓氏 + 名字
+    global first_name, last_name
     if len(full_name) > 1:
         last_name = full_name[0]
         first_name = full_name[1:]
-        print("last_name=" + last_name)
-        print("first_name=" + first_name)
         return {"firstName": first_name, "lastName": last_name}
     else:
         return {"firstName": full_name, "lastName": ""}
-
 
 # 有 keyword DB
 DB = ["生命跡象", "護理紀錄"]
@@ -114,18 +97,16 @@ def extract_keywords(text, db):
     keywords = [word for word in words if word in db]
     return keywords
 
-
-# 2-2 提取日期
 def extract_date(text):
     date_patterns = [
         r'\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b',  # MM-DD-YYYY or MM/DD/YYYY
         r'\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYYY-MM-DD or YYYY/MM/DD
-        r'\b(\d{2,3})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYY-MM-DD or YYY/MM/DD (民國年)
         r'\b(\d{4})年(\d{1,2})月(\d{1,2})日\b',  # YYYY年MM月DD日
         r'\b(\d{1,2})月(\d{1,2})日(\d{4})年\b',  # MM月DD日YYYY年
         r'\b民國(\d{1,3})年(\d{1,2})月(\d{1,2})日\b',  # 民國YYY年MM月DD日
+        r'\b(\d{2,3})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYY-MM-DD or YYY/MM/DD (民國年)
     ]
-
+   
     dates = []
     for pattern in date_patterns:
         matches = re.finditer(pattern, text)
@@ -142,12 +123,12 @@ def extract_date(text):
                         day = int(groups[2])
                     elif len(groups[0]) == 4:  # YYYY-MM-DD
                         year, month, day = map(int, groups)
-                    elif len(groups[2]) == 4:  # DD-MM-YYYY
+                    elif len(groups[2]) == 4:  # MM-DD-YYYY
                         month, day, year = map(int, groups)
                     else:  # YYY-MM-DD (民國年)
                         year = int(groups[0]) + 1911
                         month, day = map(int, groups[1:])
-
+                   
                     if 1 <= month <= 12 and 1 <= day <= 31:
                         if year < 1911:  # 處理可能的民國年份
                             year += 1911
@@ -156,127 +137,88 @@ def extract_date(text):
                         if formatted_date not in dates:
                             dates.append(formatted_date)
             except ValueError:
-                # 如果日期無效，跳過
+                # 如果日期無效
+                return "日期無效"
                 continue
+   
+    dates = sorted(dates)  # 按日期排序
+    if len(dates) == 1:
+        from_date = (datetime.strptime(dates[0], '%Y-%m-%d') - timedelta(days=1)).strftime('%Y-%m-%d')
+        to_date = dates[0]
+        dates = [from_date, to_date]
+    elif len(dates) > 1:
+        from_date = dates[0]
+        to_date = dates[-1]
+        dates = [from_date, to_date]
+    
+    return dates
 
-    return sorted(dates)  # 按日期排序
+# 自訂 JSON 編碼器
+class JSONEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, ObjectId):
+            return str(o)
+        if isinstance(o, datetime):
+            return o.isoformat()
+        return super(JSONEncoder, self).default(o)
 
-# 3: 連接 DB
+# 過濾空欄位
+def filter_empty_fields(doc):
+    return {k: v for k, v in doc.items() if v}
 
-# 3-1 从 patient 集合中提取病人 id
-def get_patient_id(firstname, lastname):
-    patients_collection = db["patients"]
-
-    query = {
-        "firstName": firstname,
-        "lastName": lastname
-    }
-
-    patient = patients_collection.find_one(query)
-
-    if patient:
-        return patient.get('_id')  # 返回患者的 MongoDB _id
-    else:
+# 查找並返回符合條件的 patients 集合中的文檔
+def read_health_data():
+    query = {"lastName": last_name, "firstName": first_name}
+    documents = patients_collection.find(query)
+    if patients_collection.count_documents(query) == 0:
         return None
-
-# 3-2 通过 id 查找 vitalsigns
-def get_vitalsigns(patient_id):
-    vitalsign_collection = db["vitalsign"]
-
-    query = {
-        "patientId": patient_id
-    }
-
-    cursor = vitalsign_collection.find(query)
-    df = pd.DataFrame(list(cursor))
-
-    if df.empty:
-        return df
-
-    if '_id' in df.columns:
-        df['id'] = df['_id'].astype(str)
-        df = df.drop('_id', axis=1)
-
-    return df
-
-# 3-3 整合以上两个函数
-def prepare_patient_data(firstname, lastname):
-    patient_id = get_patient_id(firstname, lastname)
-    if patient_id:
-        return get_vitalsigns(patient_id)
     else:
-        return pd.DataFrame()  # 如果没找到病人，返回空 DataFrame
+        for doc in documents:
+            filtered_doc = filter_empty_fields(doc)
+            return doc["_id"]
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-def generate_summary(text_description):
-    url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}'
-    headers = {'Content-Type': 'application/json'}
-    data = {
-        "contents": [
-            {
-                "parts": [{"text": f"請為以下數據生成一個自然的摘要描述{{{text_description}}}"}]
-            }
-        ]
+# 查找並打印 vitalsigns 集合中的文檔
+def read_vital_signs(patient_id, start_date, end_date):
+    query = {
+        "patient": ObjectId(patient_id),
+        "createdDate": {
+            "$gte": datetime.strptime(start_date, "%Y-%m-%d"),
+            "$lte": datetime.strptime(end_date, "%Y-%m-%d")
+        }
     }
-    response = requests.post(url, headers=headers, json=data)
-    if response.status_code == 200:
-        return response.json()["candidates"][0]["content"]["parts"][0]["text"]
-    return None
+    projection = {"PR": 1, "RR": 1, "SYS": 1, "TP": 1, "DIA": 1, "SPO2": 1, "PAIN": 1,"createdDate": 1, "_id": 0}  # 投影指定欄位
+    documents = vitalsigns_collection.find(query, projection)
+    if vitalsigns_collection.count_documents(query) == 0:
+        print("No documents found in the specified date range.")
+    else:
+        for doc in documents:
+            filtered_doc = filter_empty_fields(doc)
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
 
-
-'''
 @app.post("/extract_entities_dif")
 async def api_extract_entities(input: TextInput):
     if not input.text:
         raise HTTPException(status_code=400, detail="Text input is required")
 
-
     results = predict_and_extract_entities(input.text, tokenizer, model)
     person_names = extract_entities(results, 'PER')
     dates = extract_date(input.text)
-
-
-    keywords = extract_keywords(input.text, DB)  # 這裡要傳入 DB
-
+    keywords = extract_keywords(input.text, DB)
 
     name_parts = [extract_name_parts(name) for name in person_names]
-    print("last_name=" + last_name)
-    print("first_name=" + first_name)
 
+    patient_id = read_health_data()
+    if patient_id:
+        read_vital_signs(patient_id, dates[0], dates[1])
 
     return {
-        "dates": dates,
+        "from_date": dates[0],
+        "to_date": dates[1],
         "person_names": name_parts,
         "keywords": keywords
     }
 
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-    '''
-'''
-class PatientRequest(BaseModel):
-    firstName: str
-    lastName: str
 
-@app.post("/patient-vitalsigns")
-async def get_patient_vitalsigns(patient: PatientRequest):
-    data = prepare_patient_data(patient.firstName, patient.lastName)
-    if data.empty:
-        raise HTTPException(status_code=404, detail="Patient not found or no vitalsigns data available")
-    return data.to_dict(orient="records")
-'''
