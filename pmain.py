@@ -185,7 +185,30 @@ def prepare_data(firstname=None, lastname=None):
 
 
 # 3-2 透過 id 去找 vitalsigns
+def prepare_id(patient):
+    vitalsign_collection = db["vitalsign"]
 
+    # 使用 patient_id 作為查詢條件
+    query = {
+        "patientId": patient  # 假設 vitalsign 集合中使用 "patientId" 字段
+    }
+
+    # 從 MongoDB 獲取數據
+    cursor = vitalsign_collection.find(query)
+
+    # 將數據轉換為 DataFrame
+    df = pd.DataFrame(list(cursor))
+
+    # 如果 DataFrame 為空，返回空的 DataFrame
+    if df.empty:
+        return df
+
+    # 可選：處理 _id 字段
+    if '_id' in df.columns:
+        df['id'] = df['_id'].astype(str)
+        df = df.drop('_id', axis=1)
+
+    return df
 
 
 
@@ -218,28 +241,7 @@ def generate_summary(text_description):
         return response.json()["candidates"][0]["content"]["parts"][0]["text"]
     return None
 
-'''
-@app.post("/full_process")
-async def full_process(input: TextInput):
-    if not input.text:
-        raise HTTPException(status_code=400, detail="Text input is required")
 
-    results = predict_and_extract_entities(input.text, tokenizer, model)
-    person_names = extract_entities(results, 'PER')
-    dates = extract_date(input.text)
-
-    processed_result = ProcessedResult(dates=dates, person_names=person_names)
-    summary = generate_summary_text(processed_result, input.text)
-
-    return {
-        "processed_result": processed_result,
-        "summary": summary
-    }
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-'''
 
 @app.post("/extract_entities_dif")
 async def api_extract_entities(input: TextInput):
