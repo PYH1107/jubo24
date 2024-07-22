@@ -1,6 +1,7 @@
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from fastapi import FastAPI, HTTPException
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 from typing import List, Dict
 from datetime import datetime, timedelta
@@ -15,42 +16,42 @@ from bson import ObjectId
 import json
 import pandas as pd
 import requests
-
+ 
 # Load environment variables
 from dotenv import load_dotenv
 load_dotenv()
-
+ 
 app = FastAPI()
 password = os.getenv('MONGODB_PASSWORD')
 API_KEY = os.getenv('API_KEY')
-
+ 
 uri = f"mongodb+srv://ai-nerag:{password}@ai-nerag.iiltl.mongodb.net/?retryWrites=true&w=majority"
-
+ 
 # Create a new client and connect to the server
 client = MongoClient(uri)
-
+ 
 # Send a ping to confirm a successful connection
 try:
     client.admin.command('ping')
     print("Pinged your deployment. You successfully connected to MongoDB!")
 except Exception as e:
     print(e)
-
+ 
 db = client['release']
 patients_collection = db["patients"]
 vitalsigns_collection = db["vitalsigns"]
-
+ 
 # 載入中研院 NER 模型
 def load_model_and_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("ckiplab/bert-base-chinese-ner")
     model = AutoModelForTokenClassification.from_pretrained("ckiplab/bert-base-chinese-ner")
     return tokenizer, model
-
+ 
 tokenizer, model = load_model_and_tokenizer()
-
+ 
 class TextInput(BaseModel):
     text: str
-
+ 
 def predict_and_extract_entities(text, tokenizer, model):
     inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
     outputs = model(**inputs)
@@ -59,7 +60,7 @@ def predict_and_extract_entities(text, tokenizer, model):
     label_names = model.config.id2label
     results = [(token, label_names[label.item()]) for token, label in zip(tokens, labels[0])]
     return results
-
+ 
 def extract_entities(results, entity_type):
     entities = []
     current_entity = []
@@ -80,7 +81,7 @@ def extract_entities(results, entity_type):
     if current_entity:
         entities.append("".join(current_entity))
     return entities
-
+ 
 def extract_name_parts(full_name):
     # 假設中文名字格式：姓氏 + 名字
     global first_name, last_name
@@ -90,17 +91,17 @@ def extract_name_parts(full_name):
         return {"firstName": first_name, "lastName": last_name}
     else:
         return {"firstName": full_name, "lastName": ""}
-
+ 
 # 有 keyword DB
 DB = ["生命跡象", "護理紀錄"]
-
+ 
 def extract_keywords(text, db):
     for keyword in db:
         jieba.add_word(keyword)
     words = jieba.lcut(text)
     keywords = [word for word in words if word in db]
     return keywords
-
+ 
 def extract_date(text):
     date_patterns = [
         r'\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b',  # MM-DD-YYYY or MM/DD/YYYY
@@ -110,7 +111,7 @@ def extract_date(text):
         r'\b民國(\d{1,3})年(\d{1,2})月(\d{1,2})日\b',  # 民國YYY年MM月DD日
         r'\b(\d{2,3})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYY-MM-DD or YYY/MM/DD (民國年)
     ]
-   
+ 
     dates = []
     for pattern in date_patterns:
         matches = re.finditer(pattern, text)
@@ -132,7 +133,7 @@ def extract_date(text):
                     else:  # YYY-MM-DD (民國年)
                         year = int(groups[0]) + 1911
                         month, day = map(int, groups[1:])
-                   
+ 
                     if 1 <= month <= 12 and 1 <= day <= 31:
                         if year < 1911:  # 處理可能的民國年份
                             year += 1911
@@ -143,7 +144,7 @@ def extract_date(text):
             except ValueError:
                 # 如果日期無效，跳過
                 continue
-   
+ 
     dates = sorted(dates)  # 按日期排序
     if len(dates) == 1:
         from_date = dates[0]
@@ -153,9 +154,9 @@ def extract_date(text):
         from_date = dates[0]
         to_date = dates[-1]
         dates = [from_date, to_date]
-    
+ 
     return dates
-
+ 
 # 自訂 JSON 編碼器
 class JSONEncoder(json.JSONEncoder):
     def default(self, o):
@@ -164,11 +165,11 @@ class JSONEncoder(json.JSONEncoder):
         if isinstance(o, datetime):
             return o.isoformat()
         return super(JSONEncoder, self).default(o)
-
+ 
 # 過濾空欄位
 def filter_empty_fields(doc):
     return {k: v for k, v in doc.items() if v}
-
+ 
 # 查找並返回符合條件的 patients 集合中的文檔
 def read_health_data():
     query = {"lastName": last_name, "firstName": first_name}
@@ -179,7 +180,7 @@ def read_health_data():
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
             return doc["_id"]
-
+ 
 # 查找並打印 vitalsigns 集合中的文檔
 def read_vital_signs(patient_id, start_date, end_date):
     query = {
@@ -190,63 +191,24 @@ def read_vital_signs(patient_id, start_date, end_date):
         }
     }
     projection = {"PR": 1, "RR": 1, "SYS": 1, "TP": 1, "DIA": 1, "SPO2": 1, "PAIN": 1,"createdDate": 1, "_id": 0}  # 投影指定欄位
-    documents = vitalsigns_collection.find(query, projection)
+    documents = list(vitalsigns_collection.find(query, projection))
     if vitalsigns_collection.count_documents(query) == 0:
         print("No documents found in the specified date range.")
     else:
+        text_description = []
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
-            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
-
-def NERAG(text):
-
-    # 使用新的日期提取方法
-    dates = extract_date(text)
-
-    # 使用新的姓名提取方法
-    full_name = extract_name_parts(text)
-    person = full_name["lastName"] + full_name["firstName"]
-
-    keywords = extract_keywords(text, DB)
-
-    if not person and not dates and not keywords:
-        return "No PERSON, DATE, or DB found in the text."
-
-    # 如果有多個日期，使用範圍
-    if len(dates) >= 2:
-        start_date, end_date = dates[0], dates[-1]
-    elif len(dates) == 1:
-        start_date = end_date = dates[0]
-    else:
-        return "No valid date found in the text."
-
-    query = {
-        "姓名": person,
-        "日期": {"$gte": start_date, "$lte": end_date}
-    }
-
-    cursor = vitalsigns_collection.find(query)
-    df = pd.DataFrame(list(cursor))
-
-    if df.empty:
-        return f"No data found for {person} between {start_date} and {end_date}."
-
-    # 將 DataFrame 轉換為字符串
-    text_description = df.to_string(index=False)
-
-    # 生成摘要
-    summary = generate_summary(text_description, start_date, end_date)
-
-    if summary:
-        return summary.replace("xxx", person)
-    return "Failed to generate summary."
-
-
-
-
+            #print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            temp = (json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            text_description.append(temp)
+ 
+        return text_description
+ 
+ 
 def generate_summary(text_description, start_date, end_date):
     url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}'
     headers = {'Content-Type': 'application/json'}
+    #print("hhhhhhhhh"+text_description)
     data = {
         "contents": [
             {
@@ -258,20 +220,87 @@ def generate_summary(text_description, start_date, end_date):
     if response.status_code == 200:
         return response.json()["candidates"][0]["content"]["parts"][0]["text"]
     return None
-
-
-
+ 
+ 
+# generate responses
+def NERAG(text):
+ 
+    results = predict_and_extract_entities(text, tokenizer, model) # 分詞提取的結果
+ 
+    person_names = extract_entities(results, 'PER') # 從 NER 中 得到人名
+    dates = extract_date(text)  # 從 NER 中 得到日期
+    keywords = extract_keywords(text, DB) #從 NER 中 得到關鍵字
+ 
+    # 使用新的姓名提取方法
+    namen = [extract_name_parts(name) for name in person_names] #將完整的名字拆成"姓"、"名"
+ 
+    if not namen and not dates and not keywords:
+        return "No PERSON, DATE, or DB found in the text."
+ 
+ 
+    patient_id = read_health_data()
+    if patient_id:
+        read_vital_signs(patient_id, dates[0], dates[1])
+ 
+ 
+    # 如果有多個日期，使用範圍
+    if len(dates) >= 2:
+        start_date, end_date = dates[0], dates[-1]
+    elif len(dates) == 1:
+        start_date = end_date = dates[0]
+    else:
+        return "No valid date found in the text."
+ 
+ 
+    # 生成摘要
+    text_description = read_vital_signs (patient_id, start_date, end_date)
+    summary = generate_summary(text_description, start_date, end_date)
+ 
+    if summary:
+        return summary
+    return "Failed to generate summary."
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 class TextRequest(BaseModel):
     text: str
-
-@app.post("/extract_entities_dif")
-async def process_text(request: TextRequest):
+ 
+@app.post("/summary")
+async def process_text(input: TextInput):
+    if not input.text:
+        raise HTTPException(status_code=400, detail="Text input is required")
+ 
+    results = predict_and_extract_entities(input.text, tokenizer, model)
+    person_names = extract_entities(results, 'PER')
+    dates = extract_date(input.text)
+    keywords = extract_keywords(input.text, DB)
+ 
+    name_parts = [extract_name_parts(name) for name in person_names]
+ 
+    # 假设 read_health_data 需要姓名参数
+    patient_id = read_health_data()
+    if patient_id and len(dates) >= 2:
+        read_vital_signs(patient_id, dates[0], dates[1])
+   
     # Call the NERAG function with the provided text
-    result = NERAG(request.text)
+    result = NERAG(input.text)
     if "Failed to generate summary" in result:
         raise HTTPException(status_code=404, detail="Failed to generate summary or no data found.")
-    return {"summary": result}
-
+    return {
+       # "_id": patient_id,
+        #"from_date": dates[0],
+       # "to_date": dates[1],
+       # "person_names": name_parts,
+       # "keywords": keywords,
+        "總結": result
+    }
+ 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+ 
