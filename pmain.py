@@ -86,7 +86,6 @@ def extract_entities(results, entity_type):
     return entities
 
 def extract_name_parts(full_name):
-    # 假設中文名字格式：姓氏 + 名字
     global first_name, last_name
     if len(full_name) > 1:
         last_name = full_name[0]
@@ -183,7 +182,6 @@ def read_health_data():
             filtered_doc = filter_empty_fields(doc)
             return doc["_id"]
 
-# 查找並打印 vitalsigns 集合中的文檔
 def read_vital_signs(patient_id, start_date, end_date):
     query = {
         "patient": ObjectId(patient_id),
@@ -299,11 +297,11 @@ def NERAG(text):
     # 使用新的姓名提取方法
     namen = [extract_name_parts(name) for name in person_names] #將完整的名字拆成"姓"、"名"
     
-    if namen:  # 确保列表不为空
-        first_person = namen[0]  # 获取列表中的第一个元素
+    if namen:  # 確保列表不為空
+        first_person = namen[0]  # 取得清單中的第一個元素
         person = first_person["lastName"] + first_person["firstName"]
     else:
-        person = "?"  # 或者其他合适的默认值
+        person = "?"  # 或其他合適的預設值
     
     if not namen and not dates and not keywords:
         return "No PERSON, DATE, or DB found in the text."
@@ -328,6 +326,7 @@ def NERAG(text):
     # 生成摘要
     summary = generate_summary(text_description, start_date, end_date)
     if summary:
+        summary = summary.replace("王小明", last_name + first_name)
         return summary
     return "Failed to generate summary."
 
@@ -337,7 +336,7 @@ def generate_summary(text_description, start_date, end_date):
     data = {
         "contents": [
             {
-                "parts": [{"text": f"請為以下從 {start_date} 到 {end_date} 的數據生成一個自然的摘要描述{{{text_description}}}"}]
+                "parts": [{"text": f"請為王小明從 {start_date} 到 {end_date} 的數據，要生成一個自然的摘要描述{{{text_description}}}"}]
             }
         ]
     }
@@ -374,6 +373,7 @@ async def api_extract_entities(input: TextInput):
         text_description.extend(read_nursingdiagnosisrecords(patient_id, dates[0], dates[1]))
 
     result = NERAG(input.text)
+
     if "Failed to generate summary" in result:
         raise HTTPException(status_code=404, detail="Failed to generate summary or no data found.")
     return {
