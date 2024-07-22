@@ -13,6 +13,8 @@ import jieba.analyse
 import jieba.posseg as pseg
 from bson import ObjectId
 import json
+import pandas as pd
+import requests
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -20,6 +22,8 @@ load_dotenv()
 
 app = FastAPI()
 password = os.getenv('MONGODB_PASSWORD')
+API_KEY = os.getenv('API_KEY')
+
 uri = f"mongodb+srv://ai-nerag:{password}@ai-nerag.iiltl.mongodb.net/?retryWrites=true&w=majority"
 
 # Create a new client and connect to the server
