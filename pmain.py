@@ -212,7 +212,7 @@ def read_vital_signs(patient_id, start_date, end_date):
             print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
             temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
             text_description.append(temp)
-            
+
     return text_description
 
 def read_nursingnote(patient_id, start_date, end_date):
