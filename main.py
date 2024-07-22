@@ -13,6 +13,8 @@ import jieba.analyse
 import jieba.posseg as pseg
 from bson import ObjectId
 import json
+import pandas as pd
+import requests
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -20,6 +22,8 @@ load_dotenv()
 
 app = FastAPI()
 password = os.getenv('MONGODB_PASSWORD')
+API_KEY = os.getenv('API_KEY')
+
 uri = f"mongodb+srv://ai-nerag:{password}@ai-nerag.iiltl.mongodb.net/?retryWrites=true&w=majority"
 
 # Create a new client and connect to the server
@@ -194,28 +198,79 @@ def read_vital_signs(patient_id, start_date, end_date):
             filtered_doc = filter_empty_fields(doc)
             print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
 
-@app.post("/extract_entities_dif")
-async def api_extract_entities(input: TextInput):
-    if not input.text:
-        raise HTTPException(status_code=400, detail="Text input is required")
+def NERAG(text):
 
-    results = predict_and_extract_entities(input.text, tokenizer, model)
-    person_names = extract_entities(results, 'PER')
-    dates = extract_date(input.text)
-    keywords = extract_keywords(input.text, DB)
+    # 使用新的日期提取方法
+    dates = extract_date(text)
 
-    name_parts = [extract_name_parts(name) for name in person_names]
+    # 使用新的姓名提取方法
+    full_name = extract_name_parts(text)
+    person = full_name["lastName"] + full_name["firstName"]
 
-    patient_id = read_health_data()
-    if patient_id:
-        read_vital_signs(patient_id, dates[0], dates[1])
+    keywords = extract_keywords(text, DB)
 
-    return {
-        "from_date": dates[0],
-        "to_date": dates[1],
-        "person_names": name_parts,
-        "keywords": keywords
+    if not person and not dates and not keywords:
+        return "No PERSON, DATE, or DB found in the text."
+
+    # 如果有多個日期，使用範圍
+    if len(dates) >= 2:
+        start_date, end_date = dates[0], dates[-1]
+    elif len(dates) == 1:
+        start_date = end_date = dates[0]
+    else:
+        return "No valid date found in the text."
+
+    query = {
+        "姓名": person,
+        "日期": {"$gte": start_date, "$lte": end_date}
     }
+
+    cursor = vitalsigns_collection.find(query)
+    df = pd.DataFrame(list(cursor))
+
+    if df.empty:
+        return f"No data found for {person} between {start_date} and {end_date}."
+
+    # 將 DataFrame 轉換為字符串
+    text_description = df.to_string(index=False)
+
+    # 生成摘要
+    summary = generate_summary(text_description, start_date, end_date)
+
+    if summary:
+        return summary.replace("xxx", person)
+    return "Failed to generate summary."
+
+
+
+
+def generate_summary(text_description, start_date, end_date):
+    url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}'
+    headers = {'Content-Type': 'application/json'}
+    data = {
+        "contents": [
+            {
+                "parts": [{"text": f"請為以下從 {start_date} 到 {end_date} 的數據生成一個自然的摘要描述{{{text_description}}}"}]
+            }
+        ]
+    }
+    response = requests.post(url, headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+    return None
+
+
+
+class TextRequest(BaseModel):
+    text: str
+
+@app.post("/extract_entities_dif")
+async def process_text(request: TextRequest):
+    # Call the NERAG function with the provided text
+    result = NERAG(request.text)
+    if "Failed to generate summary" in result:
+        raise HTTPException(status_code=404, detail="Failed to generate summary or no data found.")
+    return {"summary": result}
 
 if __name__ == "__main__":
     import uvicorn
