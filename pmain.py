@@ -172,7 +172,7 @@ class JSONEncoder(json.JSONEncoder):
 def filter_empty_fields(doc):
     return {k: v for k, v in doc.items() if v}
 
-def read_health_data():
+def read_patients_info():
     query = {"lastName": last_name, "firstName": first_name}
     documents = patients_collection.find(query)
     if patients_collection.count_documents(query) == 0:
@@ -226,25 +226,15 @@ def read_nursingnote(patient_id, start_date, end_date):
     projection = {"_id": 1, "focus": 1, "createdDate": 1}
     documents = nursingnotes_collection.find(query, projection)
     text_description = []
-    if document_count == 0:
+    if nursingnotes_collection.count_documents(query) == 0:
         print("No documents found in the specified date range.")
     else:
-        documents = vitalsigns_collection.find(query, projection)
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
-            key_mapping = {
-                "PR": "脈搏率",
-                "SYS": "收縮壓",
-                "DIA": "舒張壓",
-                "SPO2": "血氧飽和度",
-                "TP": "體溫",
-                "RR": "呼吸頻率",
-                "createdDate": "記錄時間"
-            }
-            filtered_doc = {key_mapping.get(k, k): v for k, v in filtered_doc.items()}
             print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
             temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
             text_description.append(temp)
+    return text_description
 
 def read_nursingnotedetails(patient_id, start_date, end_date):
     query = {
@@ -328,7 +318,7 @@ def NERAG(text):
     if not namen and not dates and not keywords:
         return "No PERSON, DATE, or DB found in the text."
 
-    patient_id = read_health_data()
+    patient_id = read_patients_info()
     if patient_id:
         text_description = []
         text_description.extend(read_vital_signs(patient_id, dates[0], dates[1]))
