@@ -117,9 +117,9 @@ def extract_date(text):
 
     def relative_date_to_absolute(relative_date):
         today = datetime.today()
-        if relative_date == "今日":
+        if relative_date == "今天":
             return today.strftime("%Y-%m-%d")
-        elif relative_date == "昨日":
+        elif relative_date == "昨天":
             return (today - timedelta(days=1)).strftime("%Y-%m-%d")
         elif relative_date == "前天":
             return (today - timedelta(days=2)).strftime("%Y-%m-%d")
