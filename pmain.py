@@ -160,7 +160,7 @@ def extract_date(text):
                 continue
 
     # 處理相對日期
-    relative_dates = ["今日", "昨日", "前天"]
+    relative_dates = ["今天", "昨天", "前天"]
     for rel_date in relative_dates:
         if rel_date in text:
             abs_date = relative_date_to_absolute(rel_date)
