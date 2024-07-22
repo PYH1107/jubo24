@@ -111,7 +111,11 @@ def extract_date(text):
         r'\b民國(\d{1,3})年(\d{1,2})月(\d{1,2})日\b',  # 民國YYY年MM月DD日
         r'\b(\d{2,3})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYY-MM-DD or YYY/MM/DD (民國年)
     ]
+<<<<<<< HEAD
  
+=======
+
+>>>>>>> 9dccb573bda62ac73bb1a02aac3d9aa586972460
     dates = []
     for pattern in date_patterns:
         matches = re.finditer(pattern, text)
@@ -133,7 +137,11 @@ def extract_date(text):
                     else:  # YYY-MM-DD (民國年)
                         year = int(groups[0]) + 1911
                         month, day = map(int, groups[1:])
+<<<<<<< HEAD
  
+=======
+
+>>>>>>> 9dccb573bda62ac73bb1a02aac3d9aa586972460
                     if 1 <= month <= 12 and 1 <= day <= 31:
                         if year < 1911:  # 處理可能的民國年份
                             year += 1911
@@ -144,7 +152,11 @@ def extract_date(text):
             except ValueError:
                 # 如果日期無效，跳過
                 continue
+<<<<<<< HEAD
  
+=======
+
+>>>>>>> 9dccb573bda62ac73bb1a02aac3d9aa586972460
     dates = sorted(dates)  # 按日期排序
     if len(dates) == 1:
         from_date = dates[0]
@@ -154,7 +166,11 @@ def extract_date(text):
         from_date = dates[0]
         to_date = dates[-1]
         dates = [from_date, to_date]
+<<<<<<< HEAD
  
+=======
+
+>>>>>>> 9dccb573bda62ac73bb1a02aac3d9aa586972460
     return dates
  
 # 自訂 JSON 編碼器
@@ -201,10 +217,17 @@ def read_vital_signs(patient_id, start_date, end_date):
             #print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
             temp = (json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
             text_description.append(temp)
+<<<<<<< HEAD
  
         return text_description
  
  
+=======
+
+        return text_description
+
+
+>>>>>>> 9dccb573bda62ac73bb1a02aac3d9aa586972460
 def generate_summary(text_description, start_date, end_date):
     url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}'
     headers = {'Content-Type': 'application/json'}
@@ -220,6 +243,7 @@ def generate_summary(text_description, start_date, end_date):
     if response.status_code == 200:
         return response.json()["candidates"][0]["content"]["parts"][0]["text"]
     return None
+<<<<<<< HEAD
  
  
 # generate responses
@@ -243,6 +267,31 @@ def NERAG(text):
         read_vital_signs(patient_id, dates[0], dates[1])
  
  
+=======
+
+
+# generate responses
+def NERAG(text):
+
+    results = predict_and_extract_entities(text, tokenizer, model) # 分詞提取的結果
+
+    person_names = extract_entities(results, 'PER') # 從 NER 中 得到人名
+    dates = extract_date(text)  # 從 NER 中 得到日期
+    keywords = extract_keywords(text, DB) #從 NER 中 得到關鍵字
+
+    # 使用新的姓名提取方法
+    namen = [extract_name_parts(name) for name in person_names] #將完整的名字拆成"姓"、"名"
+
+    if not namen and not dates and not keywords:
+        return "No PERSON, DATE, or DB found in the text."
+
+
+    patient_id = read_health_data()
+    if patient_id:
+        read_vital_signs(patient_id, dates[0], dates[1])
+
+
+>>>>>>> 9dccb573bda62ac73bb1a02aac3d9aa586972460
     # 如果有多個日期，使用範圍
     if len(dates) >= 2:
         start_date, end_date = dates[0], dates[-1]
@@ -250,6 +299,7 @@ def NERAG(text):
         start_date = end_date = dates[0]
     else:
         return "No valid date found in the text."
+<<<<<<< HEAD
  
  
     # 生成摘要
@@ -270,6 +320,28 @@ def NERAG(text):
 class TextRequest(BaseModel):
     text: str
  
+=======
+
+
+    # 生成摘要
+    text_description = read_vital_signs (patient_id, start_date, end_date)
+    summary = generate_summary(text_description, start_date, end_date)
+
+    if summary:
+        return summary
+    return "Failed to generate summary."
+
+
+
+
+
+
+
+
+class TextRequest(BaseModel):
+    text: str
+
+>>>>>>> 9dccb573bda62ac73bb1a02aac3d9aa586972460
 @app.post("/summary")
 async def process_text(input: TextInput):
     if not input.text:
@@ -286,7 +358,11 @@ async def process_text(input: TextInput):
     patient_id = read_health_data()
     if patient_id and len(dates) >= 2:
         read_vital_signs(patient_id, dates[0], dates[1])
+<<<<<<< HEAD
    
+=======
+    
+>>>>>>> 9dccb573bda62ac73bb1a02aac3d9aa586972460
     # Call the NERAG function with the provided text
     result = NERAG(input.text)
     if "Failed to generate summary" in result:
@@ -299,8 +375,16 @@ async def process_text(input: TextInput):
        # "keywords": keywords,
         "總結": result
     }
+<<<<<<< HEAD
  
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
  
+=======
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+>>>>>>> 9dccb573bda62ac73bb1a02aac3d9aa586972460
