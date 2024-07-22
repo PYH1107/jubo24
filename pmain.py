@@ -287,33 +287,55 @@ def read_nursingdiagnosisrecords(patient_id, start_date, end_date):
             text_description.append(temp)
     return text_description
 
+
+def generate_summary(text_description, start_date, end_date):
+    url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}'
+    headers = {'Content-Type': 'application/json'}
+    data = {
+        "contents": [
+            {
+                "parts": [{"text": f"請為王小明的數據，要生成一個自然的摘要描述{{{text_description}}}"}]
+            }
+        ]
+    }
+    response = requests.post(url, headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+    return None
+
+
 # generate responses
 def NERAG(text):
     results = predict_and_extract_entities(text, tokenizer, model) # 分詞提取的結果
     person_names = extract_entities(results, 'PER') # 從 NER 中 得到人名
     dates = extract_date(text)  # 從 NER 中 得到日期
     keywords = extract_keywords(text, DB) #從 NER 中 得到關鍵字
-
+    
     # 使用新的姓名提取方法
     namen = [extract_name_parts(name) for name in person_names] #將完整的名字拆成"姓"、"名"
-    
+    '''
     if namen:  # 確保列表不為空
         first_person = namen[0]  # 取得清單中的第一個元素
         person = first_person["lastName"] + first_person["firstName"]
     else:
         person = "?"  # 或其他合適的預設值
-    
+    '''
     if not namen and not dates and not keywords:
         return "No PERSON, DATE, or DB found in the text."
 
     patient_id = read_health_data()
     if patient_id:
         text_description = []
-        text_description.extend(read_vital_signs(patient_id, dates[0], dates[1]))
-        text_description.extend(read_nursingnote(patient_id, dates[0], dates[1]))
-        text_description.extend(read_nursingnotedetails(patient_id, dates[0], dates[1]))
-        text_description.extend(read_nursingdiagnoses(patient_id, dates[0], dates[1]))
-        text_description.extend(read_nursingdiagnosisrecords(patient_id, dates[0], dates[1]))
+        if "生命跡象" in keywords:
+            text_description.extend(read_vital_signs(patient_id, dates[0], dates[1]))
+        elif "護理紀錄" in keywords:
+            text_description.extend(read_nursingnote(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingnotedetails(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingdiagnoses(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingdiagnosisrecords(patient_id, dates[0], dates[1]))
+
+        #print("Hello!")
+        #print(text_description)
 
     # 如果有多個日期，使用範圍
     if len(dates) >= 2:
@@ -330,26 +352,17 @@ def NERAG(text):
         return summary
     return "Failed to generate summary."
 
-def generate_summary(text_description, start_date, end_date):
-    url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}'
-    headers = {'Content-Type': 'application/json'}
-    data = {
-        "contents": [
-            {
-                "parts": [{"text": f"請為王小明從 {start_date} 到 {end_date} 的數據，要生成一個自然的摘要描述{{{text_description}}}"}]
-            }
-        ]
-    }
-    response = requests.post(url, headers=headers, json=data)
-    if response.status_code == 200:
-        return response.json()["candidates"][0]["content"]["parts"][0]["text"]
-    return None
+
+
+
+
 
 @app.get("/", response_class=HTMLResponse)
 async def get_home():
     with open("index.html", "r", encoding="utf-8") as file:
         html_content = file.read()
     return HTMLResponse(content=html_content)
+
 
 @app.post("/summary")
 async def api_extract_entities(input: TextInput):
@@ -366,11 +379,13 @@ async def api_extract_entities(input: TextInput):
     patient_id = read_health_data()
     if patient_id:
         text_description = []
-        text_description.extend(read_vital_signs(patient_id, dates[0], dates[1]))
-        text_description.extend(read_nursingnote(patient_id, dates[0], dates[1]))
-        text_description.extend(read_nursingnotedetails(patient_id, dates[0], dates[1]))
-        text_description.extend(read_nursingdiagnoses(patient_id, dates[0], dates[1]))
-        text_description.extend(read_nursingdiagnosisrecords(patient_id, dates[0], dates[1]))
+        if "生命跡象" in keywords:
+            text_description.extend(read_vital_signs(patient_id, dates[0], dates[1]))
+        elif "護理紀錄" in keywords:
+            text_description.extend(read_nursingnote(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingnotedetails(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingdiagnoses(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingdiagnosisrecords(patient_id, dates[0], dates[1]))
 
     result = NERAG(input.text)
 
