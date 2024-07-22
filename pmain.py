@@ -196,11 +196,23 @@ def read_vital_signs(patient_id, start_date, end_date):
     if documents == 0:
         print("No documents found in the specified date range.")
     else:
+        documents = vitalsigns_collection.find(query, projection)
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
+            key_mapping = {
+                "PR": "脈搏率",
+                "SYS": "收縮壓",
+                "DIA": "舒張壓",
+                "SPO2": "血氧飽和度",
+                "TP": "體溫",
+                "RR": "呼吸頻率",
+                "createdDate": "記錄時間"
+            }
+            filtered_doc = {key_mapping.get(k, k): v for k, v in filtered_doc.items()}
             print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
             temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
             text_description.append(temp)
+            
     return text_description
 
 def read_nursingnote(patient_id, start_date, end_date):
@@ -313,13 +325,7 @@ def NERAG(text):
     
     # 使用新的姓名提取方法
     namen = [extract_name_parts(name) for name in person_names] #將完整的名字拆成"姓"、"名"
-    '''
-    if namen:  # 確保列表不為空
-        first_person = namen[0]  # 取得清單中的第一個元素
-        person = first_person["lastName"] + first_person["firstName"]
-    else:
-        person = "?"  # 或其他合適的預設值
-    '''
+
     if not namen and not dates and not keywords:
         return "No PERSON, DATE, or DB found in the text."
 
@@ -376,6 +382,7 @@ async def api_extract_entities(input: TextInput):
 
     name_parts = [extract_name_parts(name) for name in person_names]
 
+    '''
     patient_id = read_health_data()
     if patient_id:
         text_description = []
@@ -386,7 +393,7 @@ async def api_extract_entities(input: TextInput):
             text_description.extend(read_nursingnotedetails(patient_id, dates[0], dates[1]))
             text_description.extend(read_nursingdiagnoses(patient_id, dates[0], dates[1]))
             text_description.extend(read_nursingdiagnosisrecords(patient_id, dates[0], dates[1]))
-
+    '''
     result = NERAG(input.text)
 
     if "Failed to generate summary" in result:
