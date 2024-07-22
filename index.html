@@ -36,7 +36,7 @@
                 }
 
                 $.ajax({
-                    url: '/extract_entities_dif',
+                    url: '/summary',
                     type: 'POST',
                     contentType: 'application/json',
                     data: JSON.stringify({ text: textInput }),
@@ -57,6 +57,11 @@
                             response.keywords.forEach(function(keyword) {
                                 $('#results').append('<p>' + keyword + '</p>');
                             });
+                        }
+                        
+                        if (response.result) {
+                            $('#results').append('<h4>Summary:</h4>');
+                            $('#results').append('<p>' + response.result + '</p>');
                         }
                     },
                     error: function() {

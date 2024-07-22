@@ -190,17 +190,29 @@ def read_vital_signs(patient_id, start_date, end_date):
             "$lte": datetime.strptime(end_date, "%Y-%m-%d")
         }
     }
-    projection = {"PR": 1, "RR": 1, "SYS": 1, "TP": 1, "DIA": 1, "SPO2": 1, "PAIN": 1, "createdDate": 1, "_id": 0}  # 投影指定欄位
-    documents = vitalsigns_collection.find(query, projection)
+    projection = {"PR": 1, "RR": 1, "SYS": 1, "TP": 1, "DIA": 1, "SPO2": 1, "PAIN": 1, "createdDate": 1, "_id": 0}
+    document_count = vitalsigns_collection.count_documents(query)
     text_description = []
-    if documents == 0:
+    if document_count == 0:
         print("No documents found in the specified date range.")
     else:
+        documents = vitalsigns_collection.find(query, projection)
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
+            key_mapping = {
+                "PR": "脈搏率",
+                "SYS": "收縮壓",
+                "DIA": "舒張壓",
+                "SPO2": "血氧飽和度",
+                "TP": "體溫",
+                "RR": "呼吸頻率",
+                "createdDate": "記錄時間"
+            }
+            filtered_doc = {key_mapping.get(k, k): v for k, v in filtered_doc.items()}
             print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
             temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
             text_description.append(temp)
+            
     return text_description
 
 def read_nursingnote(patient_id, start_date, end_date):
@@ -214,15 +226,25 @@ def read_nursingnote(patient_id, start_date, end_date):
     projection = {"_id": 1, "focus": 1, "createdDate": 1}
     documents = nursingnotes_collection.find(query, projection)
     text_description = []
-    if documents == 0:
+    if document_count == 0:
         print("No documents found in the specified date range.")
     else:
+        documents = vitalsigns_collection.find(query, projection)
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
+            key_mapping = {
+                "PR": "脈搏率",
+                "SYS": "收縮壓",
+                "DIA": "舒張壓",
+                "SPO2": "血氧飽和度",
+                "TP": "體溫",
+                "RR": "呼吸頻率",
+                "createdDate": "記錄時間"
+            }
+            filtered_doc = {key_mapping.get(k, k): v for k, v in filtered_doc.items()}
             print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
             temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
             text_description.append(temp)
-    return text_description
 
 def read_nursingnotedetails(patient_id, start_date, end_date):
     query = {
@@ -327,6 +349,7 @@ def NERAG(text):
     summary = generate_summary(text_description, start_date, end_date)
     if summary:
         summary = summary.replace("王小明", last_name + first_name)
+        print("summary="+summary)
         return summary
     return "Failed to generate summary."
 
@@ -336,7 +359,7 @@ def generate_summary(text_description, start_date, end_date):
     data = {
         "contents": [
             {
-                "parts": [{"text": f"請為王小明從 {start_date} 到 {end_date} 的數據，要生成一個自然的摘要描述{{{text_description}}}"}]
+                "parts": [{"text": f"請為王小明的數據，要生成一個自然的摘要描述{{{text_description}}}"}]
             }
         ]
     }
@@ -362,15 +385,6 @@ async def api_extract_entities(input: TextInput):
     keywords = extract_keywords(input.text, DB)
 
     name_parts = [extract_name_parts(name) for name in person_names]
-
-    patient_id = read_health_data()
-    if patient_id:
-        text_description = []
-        text_description.extend(read_vital_signs(patient_id, dates[0], dates[1]))
-        text_description.extend(read_nursingnote(patient_id, dates[0], dates[1]))
-        text_description.extend(read_nursingnotedetails(patient_id, dates[0], dates[1]))
-        text_description.extend(read_nursingdiagnoses(patient_id, dates[0], dates[1]))
-        text_description.extend(read_nursingdiagnosisrecords(patient_id, dates[0], dates[1]))
 
     result = NERAG(input.text)
 
