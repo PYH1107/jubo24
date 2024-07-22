@@ -1,3 +1,4 @@
+
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from fastapi import FastAPI, HTTPException
@@ -114,6 +115,17 @@ def extract_date(text):
         r'\b(\d{2,3})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYY-MM-DD or YYY/MM/DD (民國年)
     ]
 
+    def relative_date_to_absolute(relative_date):
+        today = datetime.today()
+        if relative_date == "今日":
+            return today.strftime("%Y-%m-%d")
+        elif relative_date == "昨日":
+            return (today - timedelta(days=1)).strftime("%Y-%m-%d")
+        elif relative_date == "前天":
+            return (today - timedelta(days=2)).strftime("%Y-%m-%d")
+        else:
+            return None
+
     dates = []
     for pattern in date_patterns:
         matches = re.finditer(pattern, text)
@@ -147,6 +159,14 @@ def extract_date(text):
                 # 如果日期無效，跳過
                 continue
 
+    # 處理相對日期
+    relative_dates = ["今日", "昨日", "前天"]
+    for rel_date in relative_dates:
+        if rel_date in text:
+            abs_date = relative_date_to_absolute(rel_date)
+            if abs_date and abs_date not in dates:
+                dates.append(abs_date)
+
     dates = sorted(dates)  # 按日期排序
     if len(dates) == 1:
         from_date = dates[0]
@@ -158,6 +178,7 @@ def extract_date(text):
         dates = [from_date, to_date]
 
     return dates
+
 
 # 自訂 JSON 編碼器
 class JSONEncoder(json.JSONEncoder):
@@ -303,7 +324,7 @@ def read_nursingdiagnosisrecords(patient_id, start_date, end_date):
 def NERAG(text):
     results = predict_and_extract_entities(text, tokenizer, model) # 分詞提取的結果
     person_names = extract_entities(results, 'PER') # 從 NER 中 得到人名
-    dates = extract_date(text)  # 從 NER 中 得到日期
+    dates = extract_date(text)# 從 NER 中 得到日期
     keywords = extract_keywords(text, DB) #從 NER 中 得到關鍵字
 
     # 使用新的姓名提取方法
@@ -371,6 +392,7 @@ async def api_extract_entities(input: TextInput):
 
     results = predict_and_extract_entities(input.text, tokenizer, model)
     person_names = extract_entities(results, 'PER')
+    print("inininin"+ input.text)
     dates = extract_date(input.text)
     keywords = extract_keywords(input.text, DB)
 
