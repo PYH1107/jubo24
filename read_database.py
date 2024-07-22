@@ -65,7 +65,7 @@ def read_vital_signs(patient_id, start_date, end_date):
             filtered_doc = filter_empty_fields(doc)
             print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
 
-def read_nursingnotedetails(patient_id, start_date, end_date):
+def read_nursingnote(patient_id, start_date, end_date):
     collection_name = "nursingnotes"
     collection = database[collection_name]
     query = {
@@ -75,7 +75,28 @@ def read_nursingnotedetails(patient_id, start_date, end_date):
             "$lte": datetime.datetime.strptime(end_date, "%Y-%m-%d")
         }
     }
-    documents = collection.find(query)
+    projection = {"_id": 1, "focus": 1, "createdDate": 1}
+    documents = collection.find(query, projection)
+    print(f"Collection: {collection_name}")
+    if collection.count_documents(query) == 0:
+        print("No documents found in the specified date range.")
+    else:
+        for doc in documents:
+            filtered_doc = filter_empty_fields(doc)
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+
+def read_nursingnotedetails(patient_id, start_date, end_date):
+    collection_name = "nursingnotedetails"
+    collection = database[collection_name]
+    query = {
+        "patient": ObjectId(patient_id),
+        "createdDate": {
+            "$gte": datetime.datetime.strptime(start_date, "%Y-%m-%d"),
+            "$lte": datetime.datetime.strptime(end_date, "%Y-%m-%d")
+        }
+    }
+    projection = {"_id": 0, "content": 1, "createdDate": 1}
+    documents = collection.find(query, projection)
     print(f"Collection: {collection_name}")
     if collection.count_documents(query) == 0:
         print("No documents found in the specified date range.")
@@ -91,4 +112,5 @@ if __name__ == "__main__":
         start_date = "2019-06-14"
         end_date = "2019-06-18"
         read_vital_signs(patient_id, start_date, end_date)
+        read_nursingnote(patient_id, start_date, end_date)
         read_nursingnotedetails(patient_id, start_date, end_date)
