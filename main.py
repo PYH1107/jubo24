@@ -204,26 +204,6 @@ def read_vital_signs(patient_id, start_date, end_date):
 
         return text_description
 
-'''
-def read_vitalsigns2 (patient_id, start_date, end_date):
-    query = {
-        "patient": ObjectId(patient_id),
-        "createdDate": {
-            "$gte": datetime.strptime(start_date, "%Y-%m-%d"),
-            "$lte": datetime.strptime(end_date, "%Y-%m-%d")
-        }
-    }
-    projection = {"PR": 1, "RR": 1, "SYS": 1, "TP": 1, "DIA": 1, "SPO2": 1, "PAIN": 1,"createdDate": 1, "_id": 0}  # 投影指定欄位
-    documents = vitalsigns_collection.find(query, projection)
-    if vitalsigns_collection.count_documents(query) == 0:
-        print("No documents found in the specified date range.")
-    else:
-        for doc in documents:
-            filtered_doc = filter_empty_fields(doc)
-            text_description = (json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
-            print("ddddd" + text_description)
-            return text_description
-'''
 
 def generate_summary(text_description, start_date, end_date):
     url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}'
@@ -253,13 +233,6 @@ def NERAG(text):
 
     # 使用新的姓名提取方法
     namen = [extract_name_parts(name) for name in person_names] #將完整的名字拆成"姓"、"名"
-    '''
-    if namen:  # 确保列表不为空
-        first_person = namen[0]  # 获取列表中的第一个元素
-        person = first_person["lastName"] + first_person["firstName"]
-    else:
-        person = "?"  # 或者其他合适的默认值
-    '''
 
     if not namen and not dates and not keywords:
         return "No PERSON, DATE, or DB found in the text."
