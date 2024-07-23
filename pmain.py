@@ -119,11 +119,11 @@ def extract_date(text):
         today = datetime.today()
         if relative_date == "今天":
             return today.strftime("%Y-%m-%d")
-        elif relative_date == "昨天":
+        elif relative_date == "昨天" or relative_date == "昨日":
             return (today - timedelta(days=1)).strftime("%Y-%m-%d")
-        elif relative_date == "前天":
+        elif relative_date == "前天" or relative_date == "前日":
             return (today - timedelta(days=2)).strftime("%Y-%m-%d")
-        elif relative_date == "大前天":
+        elif relative_date == "大前天" or relative_date == "大前日":
             return (today - timedelta(days=3)).strftime("%Y-%m-%d")
         else:
             return None
@@ -162,7 +162,7 @@ def extract_date(text):
                 continue
 
     # 處理相對日期
-    relative_dates = ["今天", "昨天", "前天", "大前天"]
+    relative_dates = ["今天", "昨天", "昨日", "前天", "前日", "大前天", "大前日"]
     for rel_date in relative_dates:
         if rel_date in text:
             abs_date = relative_date_to_absolute(rel_date)
@@ -203,7 +203,7 @@ def read_patients_info():
     else:
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
-            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            #print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
             return doc["_id"]
 
 def read_vital_signs(patient_id, start_date, end_date):
@@ -216,13 +216,13 @@ def read_vital_signs(patient_id, start_date, end_date):
             "$lte": end_datetime
         }
     }
-    projection = {"PR": 1, "RR": 1, "SYS": 1, "TP": 1, "DIA": 1, "SPO2": 1, "PAIN": 1, "createdDate": 1, "_id": 0}
+    projection = {"PR": 1, "RR": 1, "SYS": 1, "TP": 1, "DIA": 1, "SPO2": 1, "PAIN": 1, "createdDate": 1, "_id": 0}  # 投影指定欄位
     documents = vitalsigns_collection.find(query, projection)
     text_description = []
     if vitalsigns_collection.count_documents(query) == 0:
         print("read_vital_signs not find.")
     else:
-        
+
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
             key_mapping = {
@@ -333,6 +333,23 @@ def read_nursingdiagnosisrecords(patient_id, start_date, end_date):
             text_description.append(temp)
     return text_description
 
+
+def generate_summary(text_description, start_date, end_date):
+    url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}'
+    headers = {'Content-Type': 'application/json'}
+    data = {
+        "contents": [
+            {
+                "parts": [{"text": f"請為王小明的數據，要生成一個自然的摘要描述{{{text_description}}}"}]
+            }
+        ]
+    }
+    response = requests.post(url, headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+    return None
+
+
 # generate responses
 def NERAG(text):
     results = predict_and_extract_entities(text, tokenizer, model) # 分詞提取的結果
@@ -352,11 +369,13 @@ def NERAG(text):
     patient_id = read_patients_info()
     if patient_id:
         text_description = []
-        text_description.extend(read_vital_signs(patient_id, dates[0], dates[1]))
-        text_description.extend(read_nursingnote(patient_id, dates[0], dates[1]))
-        text_description.extend(read_nursingnotedetails(patient_id, dates[0], dates[1]))
-        text_description.extend(read_nursingdiagnoses(patient_id, dates[0], dates[1]))
-        text_description.extend(read_nursingdiagnosisrecords(patient_id, dates[0], dates[1]))
+        if "生命跡象" in keywords:
+            text_description.extend(read_vital_signs(patient_id, dates[0], dates[1]))
+        if "護理紀錄" in keywords:
+            text_description.extend(read_nursingnote(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingnotedetails(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingdiagnoses(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingdiagnosisrecords(patient_id, dates[0], dates[1]))
         if not text_description :
             print("All info not find")
             return "All patient info does not find in date range."
@@ -373,26 +392,17 @@ def NERAG(text):
         return "Not find patient_id"
 
 
-def generate_summary(text_description, start_date, end_date):
-    url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}'
-    headers = {'Content-Type': 'application/json'}
-    data = {
-        "contents": [
-            {
-                "parts": [{"text": f"請為王小明的數據，要生成一個自然的摘要描述{{{text_description}}}"}]
-            }
-        ]
-    }
-    response = requests.post(url, headers=headers, json=data)
-    if response.status_code == 200:
-        return response.json()["candidates"][0]["content"]["parts"][0]["text"]
-    return None
+
+
+
+
 
 @app.get("/", response_class=HTMLResponse)
 async def get_home():
     with open("index.html", "r", encoding="utf-8") as file:
         html_content = file.read()
     return HTMLResponse(content=html_content)
+
 
 @app.post("/summary")
 async def api_extract_entities(input: TextInput):
