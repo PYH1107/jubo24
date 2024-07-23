@@ -119,11 +119,11 @@ def extract_date(text):
         today = datetime.today()
         if relative_date == "今天":
             return today.strftime("%Y-%m-%d")
-        elif relative_date == "昨天":
+        elif relative_date == "昨天" or relative_date == "昨日":
             return (today - timedelta(days=1)).strftime("%Y-%m-%d")
-        elif relative_date == "前天":
+        elif relative_date == "前天" or relative_date == "前日":
             return (today - timedelta(days=2)).strftime("%Y-%m-%d")
-        elif relative_date == "大前天":
+        elif relative_date == "大前天" or relative_date == "大前日":
             return (today - timedelta(days=3)).strftime("%Y-%m-%d")
         else:
             return None
@@ -162,7 +162,7 @@ def extract_date(text):
                 continue
 
     # 處理相對日期
-    relative_dates = ["今天", "昨天", "前天", "大前天"]
+    relative_dates = ["今天", "昨天", "昨日", "前天", "前日", "大前天", "大前日"]
     for rel_date in relative_dates:
         if rel_date in text:
             abs_date = relative_date_to_absolute(rel_date)
@@ -376,7 +376,6 @@ def NERAG(text):
             text_description.extend(read_nursingnotedetails(patient_id, dates[0], dates[1]))
             text_description.extend(read_nursingdiagnoses(patient_id, dates[0], dates[1]))
             text_description.extend(read_nursingdiagnosisrecords(patient_id, dates[0], dates[1]))
-        print(text_description)
         if not text_description :
             print("All info not find")
             return "All patient info does not find in date range."
