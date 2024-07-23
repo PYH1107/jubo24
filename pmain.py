@@ -209,14 +209,14 @@ def read_vital_signs(patient_id, start_date, end_date):
     query = {
         "patient": ObjectId(patient_id),
         "createdDate": {
-            "$gte": datetime.strptime(start_date, "%Y-%m-%d"),
-            "$lte": datetime.strptime(end_date, "%Y-%m-%d")
+            "$gte": start_datetime,
+            "$lte": end_datetime
         }
     }
     projection = {"PR": 1, "RR": 1, "SYS": 1, "TP": 1, "DIA": 1, "SPO2": 1, "PAIN": 1, "createdDate": 1, "_id": 0}  # 投影指定欄位
     document_count = vitalsigns_collection.count_documents(query)
     text_description = []
-    if documents == 0:
+    if document_count == 0:
         print("No documents found in the specified date range.")
     else:
         documents = vitalsigns_collection.find(query, projection)
