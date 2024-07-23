@@ -203,6 +203,7 @@ def read_patients_info():
     else:
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
             return doc["_id"]
 
 def read_vital_signs(patient_id, start_date, end_date):
@@ -340,12 +341,7 @@ def NERAG(text):
     keywords = extract_keywords(text, DB) #從 NER 中 得到關鍵字
     person_names_str = ", ".join(person_names)
     print("person_names:" + person_names_str)
-    # 使用新的姓名提取方法
-    #namen = [extract_name_parts(name) for name in person_names] #將完整的名字拆成"姓"、"名"
 
-    #if not namen and not dates and not keywords:
-    #    return "No PERSON, DATE, or DB found in the text."
-    # 如果有多個日期，使用範圍
     if len(dates) >= 2:
         start_date, end_date = dates[0], dates[-1]
     elif len(dates) == 1:
@@ -361,7 +357,6 @@ def NERAG(text):
         text_description.extend(read_nursingnotedetails(patient_id, dates[0], dates[1]))
         text_description.extend(read_nursingdiagnoses(patient_id, dates[0], dates[1]))
         text_description.extend(read_nursingdiagnosisrecords(patient_id, dates[0], dates[1]))
-        print(text_description)
         if not text_description :
             print("All info not find")
             return "All patient info does not find in date range."
@@ -373,7 +368,6 @@ def NERAG(text):
                 print("summary="+summary)
                 return summary
             return "Failed to generate summary."
-    
     else:
         print("Not find patient_id in NERAG.")
         return "Not find patient_id"
@@ -417,10 +411,6 @@ async def api_extract_entities(input: TextInput):
 
     if "Failed to generate summary" in result:
         raise HTTPException(status_code=404, detail="Failed to generate summary or no data found.")
-    elif "Not find patient_id" in result:
-        raise HTTPException(status_code=404, detail="Failed find patient_id.")
-    elif "=All patient info not find." in result:
-        raise HTTPException(status_code=404, detail="All patient info does not find in date range.")
 
     return {
         "from_date": dates[0],
