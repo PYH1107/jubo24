@@ -1,9 +1,9 @@
 
 from pymongo.mongo_client import MongoClient
-from pymongo.server_api import ServerApi
+#from pymongo.server_api import ServerApi
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List, Dict
+#from typing import List, Dict
 from datetime import datetime, timedelta
 from transformers import AutoTokenizer, AutoModelForTokenClassification
 import torch
@@ -11,7 +11,7 @@ import re
 import os
 import jieba
 import jieba.analyse
-import jieba.posseg as pseg
+#import jieba.posseg as pseg
 from bson import ObjectId
 import json
 import uvicorn
@@ -222,7 +222,7 @@ def read_vital_signs(patient_id, start_date, end_date):
     if vitalsigns_collection.count_documents(query) == 0:
         print("read_vital_signs not find.")
     else:
-        
+
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
             key_mapping = {
@@ -238,7 +238,7 @@ def read_vital_signs(patient_id, start_date, end_date):
             print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
             temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
             text_description.append(temp)
-            
+
     return text_description
 
 def read_nursingnote(patient_id, start_date, end_date):
