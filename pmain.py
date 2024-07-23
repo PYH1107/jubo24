@@ -1,3 +1,4 @@
+
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 from fastapi import FastAPI, HTTPException
@@ -90,9 +91,9 @@ def extract_name_parts(full_name):
     if len(full_name) > 1:
         last_name = full_name[0]
         first_name = full_name[1:]
-        return {"firstName": first_name, "lastName": last_name}
+        return {"lastName": last_name ,"firstName": first_name}
     else:
-        return {"firstName": full_name, "lastName": ""}
+        return {"lastName": last_name ,"firstName": first_name}
 
 # 有 keyword DB
 DB = ["生命跡象", "護理紀錄"]
@@ -235,7 +236,7 @@ def read_vital_signs(patient_id, start_date, end_date):
             print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
             temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
             text_description.append(temp)
-
+            
     return text_description
 
 def read_nursingnote(patient_id, start_date, end_date):
@@ -244,8 +245,8 @@ def read_nursingnote(patient_id, start_date, end_date):
     query = {
         "patient": ObjectId(patient_id),
         "createdDate": {
-            "$gte": datetime.strptime(start_date, "%Y-%m-%d"),
-            "$lte": datetime.strptime(end_date, "%Y-%m-%d")
+            "$gte": start_datetime,
+            "$lte": end_datetime
         }
     }
     projection = {"_id": 1, "focus": 1, "createdDate": 1}
@@ -351,14 +352,15 @@ def generate_summary(text_description, start_date, end_date):
 def NERAG(text):
     results = predict_and_extract_entities(text, tokenizer, model) # 分詞提取的結果
     person_names = extract_entities(results, 'PER') # 從 NER 中 得到人名
-    dates = extract_date(text)  # 從 NER 中 得到日期
+    dates = extract_date(text)# 從 NER 中 得到日期
     keywords = extract_keywords(text, DB) #從 NER 中 得到關鍵字
-    
+    person_names_str = ", ".join(person_names)
+    print("person_names:" + person_names_str)
     # 使用新的姓名提取方法
     namen = [extract_name_parts(name) for name in person_names] #將完整的名字拆成"姓"、"名"
 
-    if not namen and not dates and not keywords:
-        return "No PERSON, DATE, or DB found in the text."
+    #if not namen and not dates and not keywords:
+    #    return "No PERSON, DATE, or DB found in the text."
 
     patient_id = read_patients_info()
     if patient_id:
@@ -413,7 +415,6 @@ async def api_extract_entities(input: TextInput):
     keywords = extract_keywords(input.text, DB)
 
     name_parts = [extract_name_parts(name) for name in person_names]
-
 
     result = NERAG(input.text)
 
