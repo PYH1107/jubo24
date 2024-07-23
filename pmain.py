@@ -172,7 +172,7 @@ def extract_date(text):
     dates = sorted(dates)  # 按日期排序
     if len(dates) == 1:
         from_date = dates[0]
-        to_date = (datetime.strptime(dates[0], '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+        to_date = dates[0]
         dates = [from_date, to_date]
     elif len(dates) > 1:
         from_date = dates[0]
