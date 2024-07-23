@@ -203,6 +203,7 @@ def read_patients_info():
     else:
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
+            #print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
             return doc["_id"]
 
 def read_vital_signs(patient_id, start_date, end_date):
