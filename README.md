@@ -7,4 +7,7 @@
 # Load environment variables
 from dotenv import load_dotenv
 load_dotenv()
+
+# update:
+主要更新在 `pmain.py`
 ```
