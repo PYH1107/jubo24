@@ -91,9 +91,9 @@ def extract_name_parts(full_name):
     if len(full_name) > 1:
         last_name = full_name[0]
         first_name = full_name[1:]
-        return {"firstName": first_name, "lastName": last_name}
+        return {"lastName": last_name ,"firstName": first_name}
     else:
-        return {"firstName": full_name, "lastName": ""}
+        return {"lastName": last_name ,"firstName": first_name}
 
 # 有 keyword DB
 DB = ["生命跡象", "護理紀錄"]
@@ -197,6 +197,7 @@ def read_patients_info():
     query = {"lastName": last_name, "firstName": first_name}
     documents = patients_collection.find(query)
     if patients_collection.count_documents(query) == 0:
+        print("Not find patient.")
         return None
     else:
         for doc in documents:
@@ -204,11 +205,13 @@ def read_patients_info():
             return doc["_id"]
 
 def read_vital_signs(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
     query = {
         "patient": ObjectId(patient_id),
         "createdDate": {
-            "$gte": datetime.strptime(start_date, "%Y-%m-%d"),
-            "$lte": datetime.strptime(end_date, "%Y-%m-%d")
+            "$gte": start_datetime,
+            "$lte": end_datetime
         }
     }
     projection = {"PR": 1, "RR": 1, "SYS": 1, "TP": 1, "DIA": 1, "SPO2": 1, "PAIN": 1, "createdDate": 1, "_id": 0}
@@ -237,11 +240,13 @@ def read_vital_signs(patient_id, start_date, end_date):
     return text_description
 
 def read_nursingnote(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
     query = {
         "patient": ObjectId(patient_id),
         "createdDate": {
-            "$gte": datetime.strptime(start_date, "%Y-%m-%d"),
-            "$lte": datetime.strptime(end_date, "%Y-%m-%d")
+            "$gte": start_datetime,
+            "$lte": end_datetime
         }
     }
     projection = {"_id": 1, "focus": 1, "createdDate": 1}
@@ -258,11 +263,13 @@ def read_nursingnote(patient_id, start_date, end_date):
     return text_description
 
 def read_nursingnotedetails(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
     query = {
         "patient": ObjectId(patient_id),
         "createdDate": {
-            "$gte": datetime.strptime(start_date, "%Y-%m-%d"),
-            "$lte": datetime.strptime(end_date, "%Y-%m-%d")
+            "$gte": start_datetime,
+            "$lte": end_datetime
         }
     }
     projection = {"_id": 0, "content": 1, "createdDate": 1}
@@ -279,11 +286,13 @@ def read_nursingnotedetails(patient_id, start_date, end_date):
     return text_description
 
 def read_nursingdiagnoses(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
     query = {
         "patient": ObjectId(patient_id),
         "createdDate": {
-            "$gte": datetime.strptime(start_date, "%Y-%m-%d"),
-            "$lte": datetime.strptime(end_date, "%Y-%m-%d")
+            "$gte": start_datetime,
+            "$lte": end_datetime
         }
     }
     projection = {"_id": 0, "features": 1, "createdDate": 1, "goals": 1, "plans": 1, "attr": 1}
@@ -300,11 +309,13 @@ def read_nursingdiagnoses(patient_id, start_date, end_date):
     return text_description
 
 def read_nursingdiagnosisrecords(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
     query = {
         "patient": ObjectId(patient_id),
         "createdDate": {
-            "$gte": datetime.strptime(start_date, "%Y-%m-%d"),
-            "$lte": datetime.strptime(end_date, "%Y-%m-%d")
+            "$gte": start_datetime,
+            "$lte": end_datetime
         }
     }
     projection = {"_id": 0, "evaluation": 1, "goals": 1, "createdDate": 1}
@@ -326,18 +337,13 @@ def NERAG(text):
     person_names = extract_entities(results, 'PER') # 從 NER 中 得到人名
     dates = extract_date(text)# 從 NER 中 得到日期
     keywords = extract_keywords(text, DB) #從 NER 中 得到關鍵字
-
+    person_names_str = ", ".join(person_names)
+    print("person_names:" + person_names_str)
     # 使用新的姓名提取方法
     namen = [extract_name_parts(name) for name in person_names] #將完整的名字拆成"姓"、"名"
-    
-    if namen:  # 確保列表不為空
-        first_person = namen[0]  # 取得清單中的第一個元素
-        person = first_person["lastName"] + first_person["firstName"]
-    else:
-        person = "?"  # 或其他合適的預設值
-    
-    if not namen and not dates and not keywords:
-        return "No PERSON, DATE, or DB found in the text."
+
+    #if not namen and not dates and not keywords:
+    #    return "No PERSON, DATE, or DB found in the text."
 
     patient_id = read_patients_info()
     if patient_id:
@@ -392,7 +398,7 @@ async def api_extract_entities(input: TextInput):
 
     results = predict_and_extract_entities(input.text, tokenizer, model)
     person_names = extract_entities(results, 'PER')
-    print("inininin"+ input.text)
+    print("input:"+ input.text)
     dates = extract_date(input.text)
     keywords = extract_keywords(input.text, DB)
 
