@@ -121,10 +121,12 @@ def extract_date(text):
             return today.strftime("%Y-%m-%d")
         elif relative_date == "昨天" or relative_date == "昨日":
             return (today - timedelta(days=1)).strftime("%Y-%m-%d")
-        elif relative_date == "前天" or relative_date == "前日":
-            return (today - timedelta(days=2)).strftime("%Y-%m-%d")
         elif relative_date == "大前天" or relative_date == "大前日":
+            #print("大前天")
             return (today - timedelta(days=3)).strftime("%Y-%m-%d")
+        elif relative_date == "前天" or relative_date == "前日":
+            #print("前天")
+            return (today - timedelta(days=2)).strftime("%Y-%m-%d")
         else:
             return None
 
@@ -140,6 +142,7 @@ def extract_date(text):
                             year = int(groups[0]) + 1911
                         else:
                             year = int(groups[0])
+
                         month = int(groups[1])
                         day = int(groups[2])
                     elif len(groups[0]) == 4:  # YYYY-MM-DD
@@ -160,15 +163,18 @@ def extract_date(text):
             except ValueError:
                 # 如果日期無效，跳過
                 continue
-
+    
     # 處理相對日期
-    relative_dates = ["今天", "昨天", "昨日", "前天", "前日", "大前天", "大前日"]
+    relative_dates = ["今天", "昨天", "昨日", "大前天", "大前日", "前天", "前日"]
+    processed_text = text
     for rel_date in relative_dates:
-        if rel_date in text:
+        if rel_date in processed_text:
             abs_date = relative_date_to_absolute(rel_date)
             if abs_date and abs_date not in dates:
                 dates.append(abs_date)
+            processed_text = processed_text.replace(rel_date, '')  # 移除已處理的日期
 
+    global from_date, to_date
     dates = sorted(dates)  # 按日期排序
     if len(dates) == 1:
         from_date = dates[0]
@@ -412,7 +418,7 @@ async def api_extract_entities(input: TextInput):
     results = predict_and_extract_entities(input.text, tokenizer, model)
     person_names = extract_entities(results, 'PER')
     print("input:"+ input.text)
-    dates = extract_date(input.text)
+    #dates = extract_date(input.text)
     keywords = extract_keywords(input.text, DB)
 
     name_parts = [extract_name_parts(name) for name in person_names]
@@ -423,8 +429,8 @@ async def api_extract_entities(input: TextInput):
         raise HTTPException(status_code=404, detail="Failed to generate summary or no data found.")
 
     return {
-        "from_date": dates[0],
-        "to_date": dates[1],
+        "from_date": from_date,
+        "to_date": to_date,
         "person_names": name_parts,
         "keywords": keywords,
         "result": result
