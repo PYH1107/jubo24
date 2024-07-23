@@ -9,7 +9,7 @@
 venv/
 
 #忽略 .txt
-topk.txt
+fake_data.txt
 name_to_db.txt
 
 #忽略 __pyache__
