@@ -123,6 +123,8 @@ def extract_date(text):
             return (today - timedelta(days=1)).strftime("%Y-%m-%d")
         elif relative_date == "前天":
             return (today - timedelta(days=2)).strftime("%Y-%m-%d")
+        elif relative_date == "大前天":
+            return (today - timedelta(days=3)).strftime("%Y-%m-%d")
         else:
             return None
 
@@ -160,7 +162,7 @@ def extract_date(text):
                 continue
 
     # 處理相對日期
-    relative_dates = ["今天", "昨天", "前天"]
+    relative_dates = ["今天", "昨天", "前天", "大前天"]
     for rel_date in relative_dates:
         if rel_date in text:
             abs_date = relative_date_to_absolute(rel_date)
@@ -197,8 +199,7 @@ def read_patients_info():
     query = {"lastName": last_name, "firstName": first_name}
     documents = patients_collection.find(query)
     if patients_collection.count_documents(query) == 0:
-        print("No data found for this patient.")
-        return None
+        print("Not find patient name.")
     else:
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
@@ -215,12 +216,12 @@ def read_vital_signs(patient_id, start_date, end_date):
         }
     }
     projection = {"PR": 1, "RR": 1, "SYS": 1, "TP": 1, "DIA": 1, "SPO2": 1, "PAIN": 1, "createdDate": 1, "_id": 0}  # 投影指定欄位
-    document_count = vitalsigns_collection.count_documents(query)
+    documents = vitalsigns_collection.find(query, projection)
     text_description = []
-    if document_count == 0:
-        print("No documents found in the specified date range.")
+    if vitalsigns_collection.count_documents(query) == 0:
+        print("read_vital_signs not find.")
     else:
-        documents = vitalsigns_collection.find(query, projection)
+        
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
             key_mapping = {
@@ -253,7 +254,7 @@ def read_nursingnote(patient_id, start_date, end_date):
     documents = nursingnotes_collection.find(query, projection)
     text_description = []
     if nursingnotes_collection.count_documents(query) == 0:
-        print("No documents found in the specified date range.")
+        print("read_nursingnote not find.")
     else:
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
@@ -275,8 +276,8 @@ def read_nursingnotedetails(patient_id, start_date, end_date):
     projection = {"_id": 0, "content": 1, "createdDate": 1}
     documents = nursingnotedetails_collection.find(query, projection)
     text_description = []
-    if documents == 0:
-        print("No documents found in the specified date range.")
+    if nursingnotedetails_collection.count_documents(query) == 0:
+        print("read_nursingnotedetails not find.")
     else:
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
@@ -298,8 +299,8 @@ def read_nursingdiagnoses(patient_id, start_date, end_date):
     projection = {"_id": 0, "features": 1, "createdDate": 1, "goals": 1, "plans": 1, "attr": 1}
     documents = nursingdiagnoses_collection.find(query, projection)
     text_description = []
-    if documents == 0:
-        print("No documents found in the specified date range.")
+    if nursingdiagnoses_collection.count_documents(query) == 0:
+        print("read_nursingdiagnoses not find.")
     else:
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
@@ -321,8 +322,8 @@ def read_nursingdiagnosisrecords(patient_id, start_date, end_date):
     projection = {"_id": 0, "evaluation": 1, "goals": 1, "createdDate": 1}
     documents = nursingdiagnosisrecords_collection.find(query, projection)
     text_description = []
-    if documents == 0:
-        print("No documents found in the specified date range.")
+    if nursingdiagnosisrecords_collection.count_documents(query) == 0:
+        print("read_nursingdiagnosisrecords not find.")
     else:
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
@@ -357,25 +358,10 @@ def NERAG(text):
     person_names_str = ", ".join(person_names)
     print("person_names:" + person_names_str)
     # 使用新的姓名提取方法
-    namen = [extract_name_parts(name) for name in person_names] #將完整的名字拆成"姓"、"名"
+    #namen = [extract_name_parts(name) for name in person_names] #將完整的名字拆成"姓"、"名"
 
     #if not namen and not dates and not keywords:
     #    return "No PERSON, DATE, or DB found in the text."
-
-    patient_id = read_patients_info()
-    if patient_id:
-        text_description = []
-        if "生命跡象" in keywords:
-            text_description.extend(read_vital_signs(patient_id, dates[0], dates[1]))
-        elif "護理紀錄" in keywords:
-            text_description.extend(read_nursingnote(patient_id, dates[0], dates[1]))
-            text_description.extend(read_nursingnotedetails(patient_id, dates[0], dates[1]))
-            text_description.extend(read_nursingdiagnoses(patient_id, dates[0], dates[1]))
-            text_description.extend(read_nursingdiagnosisrecords(patient_id, dates[0], dates[1]))
-
-        #print("Hello!")
-        #print(text_description)
-
     # 如果有多個日期，使用範圍
     if len(dates) >= 2:
         start_date, end_date = dates[0], dates[-1]
@@ -383,13 +369,34 @@ def NERAG(text):
         start_date = end_date = dates[0]
     else:
         return "No valid date found in the text."
+    
+    patient_id = read_patients_info()
+    if patient_id:
+        text_description = []
+        if "生命跡象" in keywords:
+            text_description.extend(read_vital_signs(patient_id, dates[0], dates[1]))
+        if "護理紀錄" in keywords:
+            text_description.extend(read_nursingnote(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingnotedetails(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingdiagnoses(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingdiagnosisrecords(patient_id, dates[0], dates[1]))
+        print(text_description)
+        if not text_description :
+            print("All info not find")
+            return "All patient info does not find in date range."
+        else:
+            # 生成摘要
+            summary = generate_summary(text_description, start_date, end_date)
+            if summary:
+                summary = summary.replace("王小明", last_name + first_name)
+                print("summary="+summary)
+                return summary
+            return "Failed to generate summary."
+    
+    else:
+        print("Not find patient_id in NERAG.")
+        return "Not find patient_id"
 
-    # 生成摘要
-    summary = generate_summary(text_description, start_date, end_date)
-    if summary:
-        summary = summary.replace("王小明", last_name + first_name)
-        return summary
-    return "Failed to generate summary."
 
 
 
@@ -420,6 +427,11 @@ async def api_extract_entities(input: TextInput):
 
     if "Failed to generate summary" in result:
         raise HTTPException(status_code=404, detail="Failed to generate summary or no data found.")
+    elif "Not find patient_id" in result:
+        raise HTTPException(status_code=404, detail="Failed find patient_id.")
+    elif "=All patient info not find." in result:
+        raise HTTPException(status_code=404, detail="All patient info does not find in date range.")
+
     return {
         "from_date": dates[0],
         "to_date": dates[1],
