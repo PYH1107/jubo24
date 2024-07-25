@@ -1,0 +1,36 @@
+@app.post("/full_process")
+async def full_process(input: TextInput):
+    if not input.text:
+        raise HTTPException(status_code=400, detail="Text input is required")
+
+    results = predict_and_extract_entities(input.text, tokenizer, model)
+    person_names = extract_entities(results, 'PER')
+    dates = extract_date(input.text)
+
+    processed_result = ProcessedResult(dates=dates, person_names=person_names)
+    summary = generate_summary_text(processed_result, input.text)
+
+    return {
+        "processed_result": processed_result,
+        "summary": summary
+    }
+
+
+///
+orginal
+@app.post("/extract_entities_dif")
+async def api_extract_entities(input: TextInput):
+    if not input.text:
+        raise HTTPException(status_code=400, detail="Text input is required")
+
+    results = predict_and_extract_entities(input.text, tokenizer, model)
+    person_names = extract_entities(results, 'PER')
+    dates = extract_date(input.text)
+
+    keywords = extract_keywords(input.text, DB)  # 這裡要傳入 DB
+
+    return {
+        "dates": dates,
+        "person_names": person_names,
+        "keywords": keywords
+    }
