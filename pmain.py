@@ -361,7 +361,7 @@ def NERAG(text):
     results = predict_and_extract_entities(text, tokenizer, model) # 分詞提取的結果
     person_names = extract_entities(results, 'PER') # 從 NER 中 得到人名
     dates = extract_date(text)# 從 NER 中 得到日期
-    keywords = extract_keywords(text, DB) #從 NER 中 得到關鍵字
+    keywords = extract_keywords(text, DB) #得到關鍵字
     person_names_str = ", ".join(person_names)
     print("person_names:" + person_names_str)
 
