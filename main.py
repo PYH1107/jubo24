@@ -53,8 +53,10 @@ def load_model_and_tokenizer():
 
 tokenizer, model = load_model_and_tokenizer()
 
+'''
 class TextInput(BaseModel):
     text: str
+'''
 
 def predict_and_extract_entities(text, tokenizer, model):
     inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
@@ -408,7 +410,7 @@ async def get_home():
 from linkinpark.lib.common.fastapi_middleware import FastAPIMiddleware
 app.add_middleware(FastAPIMiddleware, path_prefix="/ai-llm-agent-orgmessage")
 
-class InputData(BaseModel):
+class TextInput(BaseModel):
     input_text: str
 
 
