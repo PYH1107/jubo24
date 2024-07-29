@@ -1,44 +1,42 @@
-# 導入必要的庫
+
+from pymongo.mongo_client import MongoClient
+#from pymongo.server_api import ServerApi
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from pymongo import MongoClient
-from transformers import AutoTokenizer, AutoModel
-from sentence_transformers import SentenceTransformer
-import faiss
-import os
+#from typing import List, Dict
+from datetime import datetime, timedelta
+from transformers import AutoTokenizer, AutoModelForTokenClassification
 import torch
+import re
+import os
+import jieba
+import jieba.analyse
+#import jieba.posseg as pseg
+from bson import ObjectId
 import json
-import logging
-import google.generativeai as genai
+import uvicorn
+from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
+import requests
 
-# 加載環境變量
+# Load environment variables
 load_dotenv()
 
-# 初始化 FastAPI 應用
 app = FastAPI()
-
-# 設置日誌級別
-logging.basicConfig(level=logging.INFO)
-
-# 獲取環境變量
 password = os.getenv('MONGODB_PASSWORD')
 API_KEY = os.getenv('API_KEY')
-
-# 設置 MongoDB 連接 URI
 uri = f"mongodb+srv://ai-nerag:{password}@ai-nerag.iiltl.mongodb.net/?retryWrites=true&w=majority"
 
-# 創建 MongoDB 客戶端並連接到服務器
+# Create a new client and connect to the server
 client = MongoClient(uri)
 
-# 確認 MongoDB 連接
+# Send a ping to confirm a successful connection
 try:
     client.admin.command('ping')
-    print("成功連接到 MongoDB!")
+    print("Pinged your deployment. You successfully connected to MongoDB!")
 except Exception as e:
-    print(f"連接 MongoDB 時發生錯誤: {e}")
+    print(e)
 
-# 獲取數據庫和集合
 db = client['release']
 patients_collection = db["patients"]
 vitalsigns_collection = db["vitalsigns"]
@@ -47,242 +45,398 @@ nursingnotedetails_collection = db["nursingnotedetails"]
 nursingdiagnoses_collection = db["nursingdiagnoses"]
 nursingdiagnosisrecords_collection = db["nursingdiagnosisrecords"]
 
-# 初始化 transformers 模型和分詞器
-tokenizer = AutoTokenizer.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
-model = AutoModel.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
+# 載入中研院 NER 模型
+def load_model_and_tokenizer():
+    tokenizer = AutoTokenizer.from_pretrained("ckiplab/bert-base-chinese-ner")
+    model = AutoModelForTokenClassification.from_pretrained("ckiplab/bert-base-chinese-ner")
+    return tokenizer, model
 
-# 初始化句子轉換器
-encoder = SentenceTransformer('all-MiniLM-L6-v2')
+tokenizer, model = load_model_and_tokenizer()
 
+class TextInput(BaseModel):
+    text: str
 
-# 準備知識庫
-knowledge_base = [
-    # 單一病人特定數據查詢
-    {
-        "pattern": "查詢 [病人姓名] 的最新 [數據類型]",
-        "mongo_query": "db.患者集合.aggregate([{$match: {姓名: '[病人姓名]'}}, {$lookup: {from: '數據集合', localField: '_id', foreignField: 'patient_id', as: '數據'}}, {$unwind: '$數據'}, {$sort: {'數據.時間': -1}}, {$limit: 1}])",
-        "example": "查詢王小明的最新血壓數據"
-    },
-    {
-        "pattern": "查詢 [病人姓名] 的 [數據類型] 在 [時間] 的記錄",
-        "mongo_query": "db.患者集合.aggregate([{$match: {姓名: '[病人姓名]'}}, {$lookup: {from: '數據集合', localField: '_id', foreignField: 'patient_id', as: '數據'}}, {$unwind: '$數據'}, {$match: {'數據.類型': '[數據類型]', '數據.時間': {$gte: ISODate('[時間開始]'), $lte: ISODate('[時間結束]')}}])",
-        "example": "查詢李四的血糖數據在過去24小時的記錄"
-    },
+def predict_and_extract_entities(text, tokenizer, model):
+    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
+    outputs = model(**inputs)
+    labels = torch.argmax(outputs.logits, dim=-1)
+    tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
+    label_names = model.config.id2label
+    results = [(token, label_names[label.item()]) for token, label in zip(tokens, labels[0])]
+    return results
 
-    # 護理紀錄歷史查詢
-    {
-        "pattern": "[病人姓名] 在 [時間] 的 [數據類型] 有哪些重要事項",
-        "mongo_query": "db.護理紀錄.find({patient_id: ObjectId('...'), 時間: {$gte: ISODate('[時間開始]'), $lte: ISODate('[時間結束]')}, 類型: '[數據類型]'}).sort({時間: -1})",
-        "example": "張三在過去一週的護理紀錄有哪些重要事項"
-    },
+def extract_entities(results, entity_type):
+    entities = []
+    current_entity = []
+    for token, label in results:
+        if label.startswith(f'B-{entity_type}'):
+            if current_entity:
+                entities.append("".join(current_entity))
+                current_entity = []
+            current_entity.append(token)
+        elif label.startswith(f'I-{entity_type}') or label.startswith(f'E-{entity_type}'):
+            if token.startswith("##"):
+                current_entity[-1] += token[2:]
+            else:
+                current_entity.append(token)
+        elif current_entity:
+            entities.append("".join(current_entity))
+            current_entity = []
+    if current_entity:
+        entities.append("".join(current_entity))
+    return entities
 
-    # 特定護理項目查詢
-    {
-        "pattern": "提供 [病人姓名] 的 [特定護理項目] 記錄",
-        "mongo_query": "db.特定護理項目.find({patient_id: ObjectId('...'), 項目類型: '[特定護理項目]'}).sort({時間: -1})",
-        "example": "提供王小明的藥物過敏紀錄"
-    },
-
-    # 多名病人或全部病人的數據查詢
-    {
-        "pattern": "查詢所有病人的 [數據類型]",
-        "mongo_query": "db.患者集合.aggregate([{$lookup: {from: '數據集合', localField: '_id', foreignField: 'patient_id', as: '數據'}}, {$unwind: '$數據'}, {$match: {'數據.類型': '[數據類型]'}}, {$sort: {'數據.時間': -1}}, {$group: {_id: '$_id', 最新數據: {$first: '$數據'}}}])",
-        "example": "查詢所有病人的最新體溫情況"
-    },
-
-    # 特定護理情況查詢
-    {
-        "pattern": "[病人姓名] 的 [數據類型] 中是否有 [特定護理項目]",
-        "mongo_query": "db.護理紀錄.find({patient_id: ObjectId('...'), 類型: '[數據類型]', 內容: {$regex: '[特定護理項目]'}})",
-        "example": "王小明的護理紀錄中是否有寫到跌倒風險"
-    },
-
-    # MongoDB 查詢相關
-    {
-        "info": "MongoDB使用find()方法進行查詢。"
-    },
-    {
-        "info": "使用$gt運算符表示大於。"
-    },
-    {
-        "info": "使用$lt運算符表示小於。"
-    },
-    {
-        "info": "使用$gte運算符表示大於等於。"
-    },
-    {
-        "info": "使用$lte運算符表示小於等於。"
-    },
-    {
-        "info": "使用$eq運算符表示等於。"
-    },
-    {
-        "info": "使用$ne運算符表示不等於。"
-    },
-    {
-        "info": "使用$in運算符表示在指定數組中。"
-    },
-    {
-        "info": "使用$nin運算符表示不在指定數組中。"
-    },
-    {
-        "info": "使用$and運算符表示與操作。"
-    },
-    {
-        "info": "使用$or運算符表示或操作。"
-    },
-    {
-        "info": "使用$exists運算符檢查欄位是否存在。"
-    },
-    {
-        "info": "使用$type運算符檢查欄位類型。"
-    },
-    {
-        "info": "使用$regex運算符進行正則表達式匹配。"
-    },
-    {
-        "info": "使用$sort進行排序，1表示升序，-1表示降序。"
-    },
-    {
-        "info": "使用$limit限制返回的文檔數量。"
-    }
-]
-
-
-# 定義文本編碼函數
-def encode_text(text, model, tokenizer, max_length=512):
-    # 將輸入轉換為字符串
-    if isinstance(text, dict):
-        text = text.get('pattern') or text.get('info') or str(text)
+def extract_name_parts(full_name):
+    global first_name, last_name
+    if len(full_name) > 1:
+        last_name = full_name[0]
+        first_name = full_name[1:]
+        return {"lastName": last_name ,"firstName": first_name}
     else:
-        text = str(text)
+        return {"lastName": last_name ,"firstName": first_name}
 
-    # 使用 tokenizer 處理文本
-    inputs = tokenizer(text, padding=True, truncation=True, max_length=max_length, return_tensors="pt")
+# 有 keyword DB
+DB = ["生命跡象", "護理紀錄"]
 
-    # 使用模型生成嵌入
-    with torch.no_grad():
-        outputs = model(**inputs)
+def extract_keywords(text, db):
+    for keyword in db:
+        jieba.add_word(keyword)
+    words = jieba.lcut(text)
+    keywords = [word for word in words if word in db]
+    return keywords
 
-    # 返回最後一層隱藏狀態的平均值作為嵌入
-    return outputs.last_hidden_state.mean(dim=1)
+def extract_date(text):
+    date_patterns = [
+        r'\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b',  # MM-DD-YYYY or MM/DD/YYYY
+        r'\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYYY-MM-DD or YYYY/MM/DD
+        r'\b(\d{4})年(\d{1,2})月(\d{1,2})日\b',  # YYYY年MM月DD日
+        r'\b(\d{1,2})月(\d{1,2})日(\d{4})年\b',  # MM月DD日YYYY年
+        r'\b民國(\d{1,3})年(\d{1,2})月(\d{1,2})日\b',  # 民國YYY年MM月DD日
+        r'\b(\d{2,3})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYY-MM-DD or YYY/MM/DD (民國年)
+    ]
 
-# 編碼知識庫
-knowledge_embeddings = []
-for item in knowledge_base:
-    if isinstance(item, dict):
-        text = item.get('pattern') or item.get('info')
-    else:
-        text = item
-    if text:
-        embedding = encode_text(text, model, tokenizer)
-        knowledge_embeddings.append(embedding)
-
-# 將嵌入轉換為一個大的張量
-knowledge_embeddings = torch.cat(knowledge_embeddings, dim=0)
-
-# 創建 FAISS 索引用於快速相似度搜索
-dimension = knowledge_embeddings.shape[1]
-index = faiss.IndexFlatL2(dimension)
-index.add(knowledge_embeddings)
-
-# 檢索相關知識的函數
-def retrieve_relevant_knowledge(query, top_k=5):
-    query_embedding = encode_text(query, model, tokenizer)
-    similarities = torch.nn.functional.cosine_similarity(query_embedding, knowledge_embeddings)
-    top_indices = similarities.argsort(descending=True)[:top_k]
-    return [knowledge_base[i] for i in top_indices.tolist()]
-
-# 配置 Google Generative AI
-genai.configure(api_key=API_KEY)
-
-# 生成 MongoDB 查詢的函數
-def generate_mongo_query(query, retrieved_knowledge):
-    model = genai.GenerativeModel('gemini-pro')
-
-    # 將檢索到的知識轉換為字符串
-    knowledge_str = ""
-    for item in retrieved_knowledge:
-        if isinstance(item, dict):
-            knowledge_str += item.get('pattern', '') + " " + item.get('info', '') + "\n"
-        elif isinstance(item, str):
-            knowledge_str += item + "\n"
+    def relative_date_to_absolute(relative_date):
+        today = datetime.today()
+        if relative_date == "今天":
+            return today.strftime("%Y-%m-%d")
+        elif relative_date == "昨天" or relative_date == "昨日":
+            return (today - timedelta(days=1)).strftime("%Y-%m-%d")
+        elif relative_date == "大前天" or relative_date == "大前日":
+            #print("大前天")
+            return (today - timedelta(days=3)).strftime("%Y-%m-%d")
+        elif relative_date == "前天" or relative_date == "前日":
+            #print("前天")
+            return (today - timedelta(days=2)).strftime("%Y-%m-%d")
         else:
-            knowledge_str += str(item) + "\n"
+            return None
 
-    prompt = f"""
-    根據以下自然語言查詢和相關知識，生成一個有效的MongoDB查詢：
+    dates = []
+    for pattern in date_patterns:
+        matches = re.finditer(pattern, text)
+        for match in matches:
+            try:
+                groups = match.groups()
+                if len(groups) == 3:
+                    if '年' in pattern or '月' in pattern or '日' in pattern:
+                        if '民國' in pattern:
+                            year = int(groups[0]) + 1911
+                        else:
+                            year = int(groups[0])
 
-    查詢: {query}
+                        month = int(groups[1])
+                        day = int(groups[2])
+                    elif len(groups[0]) == 4:  # YYYY-MM-DD
+                        year, month, day = map(int, groups)
+                    elif len(groups[2]) == 4:  # MM-DD-YYYY
+                        month, day, year = map(int, groups)
+                    else:  # YYY-MM-DD (民國年)
+                        year = int(groups[0]) + 1911
+                        month, day = map(int, groups[1:])
 
-    相關知識:
-    {knowledge_str}
+                    if 1 <= month <= 12 and 1 <= day <= 31:
+                        if year < 1911:  # 處理可能的民國年份
+                            year += 1911
+                        parsed_date = datetime(year, month, day)
+                        formatted_date = parsed_date.strftime('%Y-%m-%d')
+                        if formatted_date not in dates:
+                            dates.append(formatted_date)
+            except ValueError:
+                # 如果日期無效，跳過
+                continue
+    
+    # 處理相對日期
+    relative_dates = ["今天", "昨天", "昨日", "大前天", "大前日", "前天", "前日"]
+    processed_text = text
+    for rel_date in relative_dates:
+        if rel_date in processed_text:
+            abs_date = relative_date_to_absolute(rel_date)
+            if abs_date and abs_date not in dates:
+                dates.append(abs_date)
+            processed_text = processed_text.replace(rel_date, '')  # 移除已處理的日期
 
-    請生成一個有效的MongoDB查詢，不要包含任何其他解釋。
-    """
+    global from_date, to_date
+    dates = sorted(dates)  # 按日期排序
+    if len(dates) == 1:
+        from_date = dates[0]
+        to_date = dates[0]
+        dates = [from_date, to_date]
+    elif len(dates) > 1:
+        from_date = dates[0]
+        to_date = dates[-1]
+        dates = [from_date, to_date]
 
-    system_prompt = "你是一個專門將自然語言轉換為MongoDB查詢的助手。"
-    response = model.generate_content([system_prompt, prompt])
-    return response.text
+    return dates
 
-# 確定要使用哪個 MongoDB 集合的函數
-def determine_collection(query_dict):
-    if 'patient_id' in query_dict:
-        return 'patients'
-    elif 'vital_signs' in query_dict:
-        return 'vitalsigns'
-    elif 'nursing_notes' in query_dict:
-        return 'nursingnotes'
+
+# 自訂 JSON 編碼器
+class JSONEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, ObjectId):
+            return str(o)
+        if isinstance(o, datetime):
+            return o.isoformat()
+        return super(JSONEncoder, self).default(o)
+
+# 過濾空欄位
+def filter_empty_fields(doc):
+    return {k: v for k, v in doc.items() if v}
+
+def read_patients_info():
+    query = {"lastName": last_name, "firstName": first_name}
+    documents = patients_collection.find(query)
+    if patients_collection.count_documents(query) == 0:
+        print("Not find patient name.")
     else:
-        return 'default_collection'
+        for doc in documents:
+            #filtered_doc = filter_empty_fields(doc)
+            #print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            return doc["_id"]
 
-# 執行 MongoDB 查詢的函數
-def execute_mongo_query(query_string):
-    try:
-        query_dict = json.loads(query_string)
-        collection_name = determine_collection(query_dict)
-
-        if '$lookup' in query_string or '$aggregate' in query_string:
-            result = list(db[collection_name].aggregate(query_dict))
-        else:
-            result = list(db[collection_name].find(query_dict))
-
-        for doc in result:
-            if '_id' in doc:
-                doc['_id'] = str(doc['_id'])
-
-        return result
-    except json.JSONDecodeError:
-        return {"error": "無法解析生成的查詢"}
-    except Exception as e:
-        return {"error": f"執行查詢時發生錯誤: {str(e)}"}
-
-# 定義查詢模型
-class Query(BaseModel):
-    query: str
-
-# FastAPI 路由處理函數
-@app.post("/process_query")
-async def process_query(query: Query):
-    try:
-        logging.info(f"收到查詢: {query.query}")
-        relevant_knowledge = retrieve_relevant_knowledge(query.query)
-        logging.info(f"檢索到的相關知識: {relevant_knowledge}")
-        mongo_query = generate_mongo_query(query.query, relevant_knowledge)
-        logging.info(f"生成的 MongoDB 查詢: {mongo_query}")
-        result = execute_mongo_query(mongo_query)
-        logging.info(f"查詢結果: {result}")
-        return {
-            "original_query": query.query,
-            "relevant_knowledge": relevant_knowledge,
-            "mongo_query": mongo_query,
-            "result": result
+def read_vital_signs(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+    query = {
+        "patient": ObjectId(patient_id),
+        "createdDate": {
+            "$gte": start_datetime,
+            "$lte": end_datetime
         }
-    except Exception as e:
-        logging.error(f"處理查詢時發生錯誤: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    }
+    projection = {"PR": 1, "RR": 1, "SYS": 1, "TP": 1, "DIA": 1, "SPO2": 1, "PAIN": 1, "createdDate": 1, "_id": 0}  # 投影指定欄位
+    documents = vitalsigns_collection.find(query, projection)
+    text_description = []
+    if vitalsigns_collection.count_documents(query) == 0:
+        print("read_vital_signs not find.")
+    else:
 
-# 主函數
+        for doc in documents:
+            filtered_doc = filter_empty_fields(doc)
+            key_mapping = {
+                "PR": "脈搏率",
+                "SYS": "收縮壓",
+                "DIA": "舒張壓",
+                "SPO2": "血氧飽和度",
+                "TP": "體溫",
+                "RR": "呼吸頻率",
+                "createdDate": "記錄時間"
+            }
+            filtered_doc = {key_mapping.get(k, k): v for k, v in filtered_doc.items()}
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
+            text_description.append(temp)
+
+    return text_description
+
+def read_nursingnote(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+    query = {
+        "patient": ObjectId(patient_id),
+        "createdDate": {
+            "$gte": start_datetime,
+            "$lte": end_datetime
+        }
+    }
+    projection = {"_id": 1, "focus": 1, "createdDate": 1}
+    documents = nursingnotes_collection.find(query, projection)
+    text_description = []
+    if nursingnotes_collection.count_documents(query) == 0:
+        print("read_nursingnote not find.")
+    else:
+        for doc in documents:
+            filtered_doc = filter_empty_fields(doc)
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
+            text_description.append(temp)
+    return text_description
+
+def read_nursingnotedetails(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+    query = {
+        "patient": ObjectId(patient_id),
+        "createdDate": {
+            "$gte": start_datetime,
+            "$lte": end_datetime
+        }
+    }
+    projection = {"_id": 0, "content": 1, "createdDate": 1}
+    documents = nursingnotedetails_collection.find(query, projection)
+    text_description = []
+    if nursingnotedetails_collection.count_documents(query) == 0:
+        print("read_nursingnotedetails not find.")
+    else:
+        for doc in documents:
+            filtered_doc = filter_empty_fields(doc)
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
+            text_description.append(temp)
+    return text_description
+
+def read_nursingdiagnoses(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+    query = {
+        "patient": ObjectId(patient_id),
+        "createdDate": {
+            "$gte": start_datetime,
+            "$lte": end_datetime
+        }
+    }
+    projection = {"_id": 0, "features": 1, "createdDate": 1, "goals": 1, "plans": 1, "attr": 1}
+    documents = nursingdiagnoses_collection.find(query, projection)
+    text_description = []
+    if nursingdiagnoses_collection.count_documents(query) == 0:
+        print("read_nursingdiagnoses not find.")
+    else:
+        for doc in documents:
+            filtered_doc = filter_empty_fields(doc)
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
+            text_description.append(temp)
+    return text_description
+
+def read_nursingdiagnosisrecords(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+    query = {
+        "patient": ObjectId(patient_id),
+        "createdDate": {
+            "$gte": start_datetime,
+            "$lte": end_datetime
+        }
+    }
+    projection = {"_id": 0, "evaluation": 1, "goals": 1, "createdDate": 1}
+    documents = nursingdiagnosisrecords_collection.find(query, projection)
+    text_description = []
+    if nursingdiagnosisrecords_collection.count_documents(query) == 0:
+        print("read_nursingdiagnosisrecords not find.")
+    else:
+        for doc in documents:
+            filtered_doc = filter_empty_fields(doc)
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
+            text_description.append(temp)
+    return text_description
+
+
+def generate_summary(text_description, start_date, end_date):
+    url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}'
+    headers = {'Content-Type': 'application/json'}
+    data = {
+        "contents": [
+            {
+                "parts": [{"text": f"請為王小明的數據，要生成一個自然的摘要描述{{{text_description}}}"}]
+            }
+        ]
+    }
+    response = requests.post(url, headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+    return None
+
+
+# generate responses
+def NERAG(text):
+    results = predict_and_extract_entities(text, tokenizer, model) # 分詞提取的結果
+    person_names = extract_entities(results, 'PER') # 從 NER 中 得到人名
+    dates = extract_date(text)# 從 NER 中 得到日期
+    keywords = extract_keywords(text, DB) #得到關鍵字
+    person_names_str = ", ".join(person_names)
+    print("person_names:" + person_names_str)
+
+    if len(dates) >= 2:
+        start_date, end_date = dates[0], dates[-1]
+    elif len(dates) == 1:
+        start_date = end_date = dates[0]
+    else:
+        return "No valid date found in the text."
+
+    patient_id = read_patients_info()
+    if patient_id:
+        text_description = []
+        if "生命跡象" in keywords:
+            text_description.extend(read_vital_signs(patient_id, dates[0], dates[1]))
+        if "護理紀錄" in keywords:
+            text_description.extend(read_nursingnote(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingnotedetails(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingdiagnoses(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingdiagnosisrecords(patient_id, dates[0], dates[1]))
+        if not text_description :
+            print("All info not find")
+            return "All patient info does not find in date range."
+        else:
+            # 生成摘要
+            summary = generate_summary(text_description, start_date, end_date)
+            if summary:
+                summary = summary.replace("王小明", last_name + first_name)
+                print("summary="+summary)
+                return summary
+            return "Failed to generate summary."
+    else:
+        print("Not find patient_id in NERAG.")
+        return "Not find patient_id"
+
+
+'''
+@app.get("/", response_class=HTMLResponse)
+async def get_home():
+    with open("index.html", "r", encoding="utf-8") as file:
+        html_content = file.read()
+    return HTMLResponse(content=html_content)
+'''
+from linkinpark.lib.common.fastapi_middleware import FastAPIMiddleware
+app.add_middleware(FastAPIMiddleware, path_prefix="/ai-llm-agent-orgmessage")
+
+class InputData(BaseModel):
+    input_text: str
+
+
+@app.post("/ai-ncopilot-ner/summary")
+async def api_extract_entities(input: TextInput):
+    if not input.input_text:
+        raise HTTPException(status_code=400, detail="Text input is required")
+
+    results = predict_and_extract_entities(input.input_text, tokenizer, model)
+    person_names = extract_entities(results, 'PER')
+    print("input:"+ input.input_text)
+    #dates = extract_date(input.text)
+    keywords = extract_keywords(input.input_text, DB)
+
+    name_parts = [extract_name_parts(name) for name in person_names]
+
+    result = NERAG(input.input_text)
+
+    if "Failed to generate summary" in result:
+        raise HTTPException(status_code=404, detail="Failed to generate summary or no data found.")
+
+    return {
+       # "from_date": from_date,
+       # "to_date": to_date,
+       # "person_names": name_parts,
+       # "keywords": keywords,
+        "result": result
+    }
+
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
