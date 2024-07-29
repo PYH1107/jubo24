@@ -1,9 +1,8 @@
 from pymongo.mongo_client import MongoClient
-from pymongo.server_api import ServerApi
+#from pymongo.server_api import ServerApi
 from fastapi import FastAPI, HTTPException
-from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
-from typing import List, Dict
+#from typing import List, Dict
 from datetime import datetime, timedelta
 from transformers import AutoTokenizer, AutoModelForTokenClassification
 import torch
@@ -11,20 +10,21 @@ import re
 import os
 import jieba
 import jieba.analyse
-import jieba.posseg as pseg
+#import jieba.posseg as pseg
 from bson import ObjectId
 import json
-import pandas as pd
+import uvicorn
+from fastapi.responses import HTMLResponse
+from dotenv import load_dotenv
 import requests
+from auth0.auth import get_token_data
  
 # Load environment variables
-from dotenv import load_dotenv
 load_dotenv()
  
 app = FastAPI()
 password = os.getenv('MONGODB_PASSWORD')
 API_KEY = os.getenv('API_KEY')
- 
 uri = f"mongodb+srv://ai-nerag:{password}@ai-nerag.iiltl.mongodb.net/?retryWrites=true&w=majority"
  
 # Create a new client and connect to the server
@@ -40,6 +40,10 @@ except Exception as e:
 db = client['release']
 patients_collection = db["patients"]
 vitalsigns_collection = db["vitalsigns"]
+nursingnotes_collection = db["nursingnotes"]
+nursingnotedetails_collection = db["nursingnotedetails"]
+nursingdiagnoses_collection = db["nursingdiagnoses"]
+nursingdiagnosisrecords_collection = db["nursingdiagnosisrecords"]
  
 # 載入中研院 NER 模型
 def load_model_and_tokenizer():
@@ -49,8 +53,10 @@ def load_model_and_tokenizer():
  
 tokenizer, model = load_model_and_tokenizer()
  
+'''
 class TextInput(BaseModel):
     text: str
+'''
  
 def predict_and_extract_entities(text, tokenizer, model):
     inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
@@ -83,14 +89,13 @@ def extract_entities(results, entity_type):
     return entities
  
 def extract_name_parts(full_name):
-    # 假設中文名字格式：姓氏 + 名字
     global first_name, last_name
     if len(full_name) > 1:
         last_name = full_name[0]
         first_name = full_name[1:]
-        return {"firstName": first_name, "lastName": last_name}
+        return {"lastName": last_name ,"firstName": first_name}
     else:
-        return {"firstName": full_name, "lastName": ""}
+        return {"lastName": last_name ,"firstName": first_name}
  
 # 有 keyword DB
 DB = ["生命跡象", "護理紀錄"]
@@ -112,6 +117,21 @@ def extract_date(text):
         r'\b(\d{2,3})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYY-MM-DD or YYY/MM/DD (民國年)
     ]
  
+    def relative_date_to_absolute(relative_date):
+        today = datetime.today()
+        if relative_date == "今天":
+            return today.strftime("%Y-%m-%d")
+        elif relative_date == "昨天" or relative_date == "昨日":
+            return (today - timedelta(days=1)).strftime("%Y-%m-%d")
+        elif relative_date == "大前天" or relative_date == "大前日":
+            #print("大前天")
+            return (today - timedelta(days=3)).strftime("%Y-%m-%d")
+        elif relative_date == "前天" or relative_date == "前日":
+            #print("前天")
+            return (today - timedelta(days=2)).strftime("%Y-%m-%d")
+        else:
+            return None
+ 
     dates = []
     for pattern in date_patterns:
         matches = re.finditer(pattern, text)
@@ -124,6 +144,7 @@ def extract_date(text):
                             year = int(groups[0]) + 1911
                         else:
                             year = int(groups[0])
+ 
                         month = int(groups[1])
                         day = int(groups[2])
                     elif len(groups[0]) == 4:  # YYYY-MM-DD
@@ -144,11 +165,22 @@ def extract_date(text):
             except ValueError:
                 # 如果日期無效，跳過
                 continue
+   
+    # 處理相對日期
+    relative_dates = ["今天", "昨天", "昨日", "大前天", "大前日", "前天", "前日"]
+    processed_text = text
+    for rel_date in relative_dates:
+        if rel_date in processed_text:
+            abs_date = relative_date_to_absolute(rel_date)
+            if abs_date and abs_date not in dates:
+                dates.append(abs_date)
+            processed_text = processed_text.replace(rel_date, '')  # 移除已處理的日期
  
+    global from_date, to_date
     dates = sorted(dates)  # 按日期排序
     if len(dates) == 1:
         from_date = dates[0]
-        to_date = (datetime.strptime(dates[0], '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
+        to_date = dates[0]
         dates = [from_date, to_date]
     elif len(dates) > 1:
         from_date = dates[0]
@@ -156,6 +188,7 @@ def extract_date(text):
         dates = [from_date, to_date]
  
     return dates
+ 
  
 # 自訂 JSON 編碼器
 class JSONEncoder(json.JSONEncoder):
@@ -170,49 +203,152 @@ class JSONEncoder(json.JSONEncoder):
 def filter_empty_fields(doc):
     return {k: v for k, v in doc.items() if v}
  
-# 查找並返回符合條件的 patients 集合中的文檔
-def read_health_data():
+def read_patients_info():
     query = {"lastName": last_name, "firstName": first_name}
     documents = patients_collection.find(query)
     if patients_collection.count_documents(query) == 0:
-        return None
+        print("Not find patient name.")
     else:
         for doc in documents:
-            filtered_doc = filter_empty_fields(doc)
+            #filtered_doc = filter_empty_fields(doc)
+            #print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
             return doc["_id"]
  
-# 查找並打印 vitalsigns 集合中的文檔
 def read_vital_signs(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
     query = {
         "patient": ObjectId(patient_id),
         "createdDate": {
-            "$gte": datetime.strptime(start_date, "%Y-%m-%d"),
-            "$lte": datetime.strptime(end_date, "%Y-%m-%d")
+            "$gte": start_datetime,
+            "$lte": end_datetime
         }
     }
-    projection = {"PR": 1, "RR": 1, "SYS": 1, "TP": 1, "DIA": 1, "SPO2": 1, "PAIN": 1,"createdDate": 1, "_id": 0}  # 投影指定欄位
-    documents = list(vitalsigns_collection.find(query, projection))
+    projection = {"PR": 1, "RR": 1, "SYS": 1, "TP": 1, "DIA": 1, "SPO2": 1, "PAIN": 1, "createdDate": 1, "_id": 0}  # 投影指定欄位
+    documents = vitalsigns_collection.find(query, projection)
+    text_description = []
     if vitalsigns_collection.count_documents(query) == 0:
-        print("No documents found in the specified date range.")
+        print("read_vital_signs not find.")
     else:
-        text_description = []
+ 
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
-            #print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
-            temp = (json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            key_mapping = {
+                "PR": "脈搏率",
+                "SYS": "收縮壓",
+                "DIA": "舒張壓",
+                "SPO2": "血氧飽和度",
+                "TP": "體溫",
+                "RR": "呼吸頻率",
+                "createdDate": "記錄時間"
+            }
+            filtered_doc = {key_mapping.get(k, k): v for k, v in filtered_doc.items()}
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
             text_description.append(temp)
  
-        return text_description
+    return text_description
+ 
+def read_nursingnote(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+    query = {
+        "patient": ObjectId(patient_id),
+        "createdDate": {
+            "$gte": start_datetime,
+            "$lte": end_datetime
+        }
+    }
+    projection = {"_id": 1, "focus": 1, "createdDate": 1}
+    documents = nursingnotes_collection.find(query, projection)
+    text_description = []
+    if nursingnotes_collection.count_documents(query) == 0:
+        print("read_nursingnote not find.")
+    else:
+        for doc in documents:
+            filtered_doc = filter_empty_fields(doc)
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
+            text_description.append(temp)
+    return text_description
+ 
+def read_nursingnotedetails(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+    query = {
+        "patient": ObjectId(patient_id),
+        "createdDate": {
+            "$gte": start_datetime,
+            "$lte": end_datetime
+        }
+    }
+    projection = {"_id": 0, "content": 1, "createdDate": 1}
+    documents = nursingnotedetails_collection.find(query, projection)
+    text_description = []
+    if nursingnotedetails_collection.count_documents(query) == 0:
+        print("read_nursingnotedetails not find.")
+    else:
+        for doc in documents:
+            filtered_doc = filter_empty_fields(doc)
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
+            text_description.append(temp)
+    return text_description
+ 
+def read_nursingdiagnoses(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+    query = {
+        "patient": ObjectId(patient_id),
+        "createdDate": {
+            "$gte": start_datetime,
+            "$lte": end_datetime
+        }
+    }
+    projection = {"_id": 0, "features": 1, "createdDate": 1, "goals": 1, "plans": 1, "attr": 1}
+    documents = nursingdiagnoses_collection.find(query, projection)
+    text_description = []
+    if nursingdiagnoses_collection.count_documents(query) == 0:
+        print("read_nursingdiagnoses not find.")
+    else:
+        for doc in documents:
+            filtered_doc = filter_empty_fields(doc)
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
+            text_description.append(temp)
+    return text_description
+ 
+def read_nursingdiagnosisrecords(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+    query = {
+        "patient": ObjectId(patient_id),
+        "createdDate": {
+            "$gte": start_datetime,
+            "$lte": end_datetime
+        }
+    }
+    projection = {"_id": 0, "evaluation": 1, "goals": 1, "createdDate": 1}
+    documents = nursingdiagnosisrecords_collection.find(query, projection)
+    text_description = []
+    if nursingdiagnosisrecords_collection.count_documents(query) == 0:
+        print("read_nursingdiagnosisrecords not find.")
+    else:
+        for doc in documents:
+            filtered_doc = filter_empty_fields(doc)
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
+            text_description.append(temp)
+    return text_description
  
  
 def generate_summary(text_description, start_date, end_date):
     url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}'
     headers = {'Content-Type': 'application/json'}
-    #print("hhhhhhhhh"+text_description)
     data = {
         "contents": [
             {
-                "parts": [{"text": f"請為以下從 {start_date} 到 {end_date} 的數據生成一個自然的摘要描述{{{text_description}}}"}]
+                "parts": [{"text": f"請為王小明的數據，要生成一個自然的摘要描述{{{text_description}}}"}]
             }
         ]
     }
@@ -224,26 +360,13 @@ def generate_summary(text_description, start_date, end_date):
  
 # generate responses
 def NERAG(text):
- 
     results = predict_and_extract_entities(text, tokenizer, model) # 分詞提取的結果
- 
     person_names = extract_entities(results, 'PER') # 從 NER 中 得到人名
-    dates = extract_date(text)  # 從 NER 中 得到日期
-    keywords = extract_keywords(text, DB) #從 NER 中 得到關鍵字
+    dates = extract_date(text)# 從 NER 中 得到日期
+    keywords = extract_keywords(text, DB) #得到關鍵字
+    person_names_str = ", ".join(person_names)
+    print("person_names:" + person_names_str)
  
-    # 使用新的姓名提取方法
-    namen = [extract_name_parts(name) for name in person_names] #將完整的名字拆成"姓"、"名"
- 
-    if not namen and not dates and not keywords:
-        return "No PERSON, DATE, or DB found in the text."
- 
- 
-    patient_id = read_health_data()
-    if patient_id:
-        read_vital_signs(patient_id, dates[0], dates[1])
- 
- 
-    # 如果有多個日期，使用範圍
     if len(dates) >= 2:
         start_date, end_date = dates[0], dates[-1]
     elif len(dates) == 1:
@@ -251,56 +374,71 @@ def NERAG(text):
     else:
         return "No valid date found in the text."
  
+    patient_id = read_patients_info()
+    if patient_id:
+        text_description = []
+        if "生命跡象" in keywords:
+            text_description.extend(read_vital_signs(patient_id, dates[0], dates[1]))
+        if "護理紀錄" in keywords:
+            text_description.extend(read_nursingnote(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingnotedetails(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingdiagnoses(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingdiagnosisrecords(patient_id, dates[0], dates[1]))
+        if not text_description :
+            print("All info not find")
+            return "All patient info does not find in date range."
+        else:
+            # 生成摘要
+            summary = generate_summary(text_description, start_date, end_date)
+            if summary:
+                summary = summary.replace("王小明", last_name + first_name)
+                print("summary="+summary)
+                return summary
+            return "Failed to generate summary."
+    else:
+        print("Not find patient_id in NERAG.")
+        return "Not find patient_id"
  
-    # 生成摘要
-    text_description = read_vital_signs (patient_id, start_date, end_date)
-    summary = generate_summary(text_description, start_date, end_date)
  
-    if summary:
-        return summary
-    return "Failed to generate summary."
+'''
+@app.get("/", response_class=HTMLResponse)
+async def get_home():
+    with open("index.html", "r", encoding="utf-8") as file:
+        html_content = file.read()
+    return HTMLResponse(content=html_content)
+'''
+from linkinpark.lib.common.fastapi_middleware import FastAPIMiddleware
+app.add_middleware(FastAPIMiddleware, path_prefix="/ai-ncopilot-ner")
+ 
+class TextInput(BaseModel):
+    input_text: str
  
  
- 
- 
- 
- 
- 
- 
-class TextRequest(BaseModel):
-    text: str
- 
-@app.post("/summary")
-async def process_text(input: TextInput):
-    if not input.text:
+@app.post("/ai-ncopilot-ner/summary")
+async def api_extract_entities(input: TextInput, token_data: TokenData = Depends(get_token_data)):
+    if not input.input_text:
         raise HTTPException(status_code=400, detail="Text input is required")
  
-    results = predict_and_extract_entities(input.text, tokenizer, model)
+    results = predict_and_extract_entities(input.input_text, tokenizer, model)
     person_names = extract_entities(results, 'PER')
-    dates = extract_date(input.text)
-    keywords = extract_keywords(input.text, DB)
+    print("input:"+ input.input_text)
+    #dates = extract_date(input.text)
+    keywords = extract_keywords(input.input_text, DB)
  
     name_parts = [extract_name_parts(name) for name in person_names]
  
-    # 假设 read_health_data 需要姓名参数
-    patient_id = read_health_data()
-    if patient_id and len(dates) >= 2:
-        read_vital_signs(patient_id, dates[0], dates[1])
-   
-    # Call the NERAG function with the provided text
-    result = NERAG(input.text)
+    result = NERAG(input.input_text)
+ 
     if "Failed to generate summary" in result:
         raise HTTPException(status_code=404, detail="Failed to generate summary or no data found.")
+ 
     return {
-       # "_id": patient_id,
-        #"from_date": dates[0],
-       # "to_date": dates[1],
+       # "from_date": from_date,
+       # "to_date": to_date,
        # "person_names": name_parts,
        # "keywords": keywords,
-        "總結": result
+        "result": result
     }
  
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
- 
