@@ -18,6 +18,15 @@ import uvicorn
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 import requests
+from typing import List, Dict
+from pydantic import BaseModel
+from fastapi import Depends
+
+class TokenData(BaseModel):
+    sub: str
+    permissions: List[str] = []
+    roles: List[str] = []
+    app_metadata: Dict[str, str] = {}
 
 # Load environment variables
 load_dotenv()
@@ -408,14 +417,15 @@ async def get_home():
     return HTMLResponse(content=html_content)
 '''
 from linkinpark.lib.common.fastapi_middleware import FastAPIMiddleware
-app.add_middleware(FastAPIMiddleware, path_prefix="/ai-llm-agent-orgmessage")
+app.add_middleware(FastAPIMiddleware, path_prefix="/ai-ncopilot-ner")
 
 class TextInput(BaseModel):
     input_text: str
 
+# def token_c(a: str, b: str, token_data: TokenData = Depends(get_token_data))
 
 @app.post("/ai-ncopilot-ner/summary")
-async def api_extract_entities(input: TextInput):
+async def api_extract_entities(input: TextInput, token_c):
     if not input.input_text:
         raise HTTPException(status_code=400, detail="Text input is required")
 
@@ -442,3 +452,6 @@ async def api_extract_entities(input: TextInput):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+ 
