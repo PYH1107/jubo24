@@ -1,6 +1,6 @@
 from pymongo.mongo_client import MongoClient
 #from pymongo.server_api import ServerApi
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException,Depends
 from pydantic import BaseModel
 #from typing import List, Dict
 from datetime import datetime, timedelta
@@ -18,6 +18,8 @@ from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 import requests
 from auth0.auth import get_token_data
+from auth0.models import TokenData
+
  
 # Load environment variables
 load_dotenv()
