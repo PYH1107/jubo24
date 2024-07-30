@@ -1,5 +1,5 @@
 steps:
  - name: 'gcr.io/cloud-builders/docker'
-   args: [ 'build', '-f', 'docker/Dockerfile.app', '-t', 'asia-east1-docker.pkg.dev/jubo-ai/jubo-ai/linkinpark:${COMMIT_SHA}', '.' ]
+   args: [ 'build', '-f', 'Dockerfile.app', '-t', 'asia-east1-docker.pkg.dev/jubo-ai/jubo-ai/linkinpark:latest', '.' ]
  - name: 'gcr.io/cloud-builders/docker'
-   args: [ 'push', 'asia-east1-docker.pkg.dev/jubo-ai/jubo-ai/linkinpark:${COMMIT_SHA}']
+   args: [ 'push', 'asia-east1-docker.pkg.dev/jubo-ai/jubo-ai/linkinpark:latest']

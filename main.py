@@ -18,16 +18,8 @@ import uvicorn
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 import requests
-from typing import List, Dict
-from pydantic import BaseModel
-from fastapi import Depends
-
-class TokenData(BaseModel):
-    sub: str
-    permissions: List[str] = []
-    roles: List[str] = []
-    app_metadata: Dict[str, str] = {}
-
+from auth0.auth import get_token_data
+ 
 # Load environment variables
 load_dotenv()
 
@@ -53,7 +45,7 @@ nursingnotes_collection = db["nursingnotes"]
 nursingnotedetails_collection = db["nursingnotedetails"]
 nursingdiagnoses_collection = db["nursingdiagnoses"]
 nursingdiagnosisrecords_collection = db["nursingdiagnosisrecords"]
-
+ 
 # 載入中研院 NER 模型
 def load_model_and_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained("ckiplab/bert-base-chinese-ner")
@@ -61,12 +53,12 @@ def load_model_and_tokenizer():
     return tokenizer, model
 
 tokenizer, model = load_model_and_tokenizer()
-
+ 
 '''
 class TextInput(BaseModel):
     text: str
 '''
-
+ 
 def predict_and_extract_entities(text, tokenizer, model):
     inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
     outputs = model(**inputs)
@@ -105,7 +97,7 @@ def extract_name_parts(full_name):
         return {"lastName": last_name ,"firstName": first_name}
     else:
         return {"lastName": last_name ,"firstName": first_name}
-
+ 
 # 有 keyword DB
 DB = ["生命跡象", "護理紀錄"]
 
@@ -125,7 +117,7 @@ def extract_date(text):
         r'\b民國(\d{1,3})年(\d{1,2})月(\d{1,2})日\b',  # 民國YYY年MM月DD日
         r'\b(\d{2,3})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYY-MM-DD or YYY/MM/DD (民國年)
     ]
-
+ 
     def relative_date_to_absolute(relative_date):
         today = datetime.today()
         if relative_date == "今天":
@@ -140,7 +132,7 @@ def extract_date(text):
             return (today - timedelta(days=2)).strftime("%Y-%m-%d")
         else:
             return None
-
+ 
     dates = []
     for pattern in date_patterns:
         matches = re.finditer(pattern, text)
@@ -153,7 +145,7 @@ def extract_date(text):
                             year = int(groups[0]) + 1911
                         else:
                             year = int(groups[0])
-
+ 
                         month = int(groups[1])
                         day = int(groups[2])
                     elif len(groups[0]) == 4:  # YYYY-MM-DD
@@ -174,7 +166,7 @@ def extract_date(text):
             except ValueError:
                 # 如果日期無效，跳過
                 continue
-    
+   
     # 處理相對日期
     relative_dates = ["今天", "昨天", "昨日", "大前天", "大前日", "前天", "前日"]
     processed_text = text
@@ -184,7 +176,7 @@ def extract_date(text):
             if abs_date and abs_date not in dates:
                 dates.append(abs_date)
             processed_text = processed_text.replace(rel_date, '')  # 移除已處理的日期
-
+ 
     global from_date, to_date
     dates = sorted(dates)  # 按日期排序
     if len(dates) == 1:
@@ -197,8 +189,8 @@ def extract_date(text):
         dates = [from_date, to_date]
 
     return dates
-
-
+ 
+ 
 # 自訂 JSON 編碼器
 class JSONEncoder(json.JSONEncoder):
     def default(self, o):
@@ -211,7 +203,7 @@ class JSONEncoder(json.JSONEncoder):
 # 過濾空欄位
 def filter_empty_fields(doc):
     return {k: v for k, v in doc.items() if v}
-
+ 
 def read_patients_info():
     query = {"lastName": last_name, "firstName": first_name}
     documents = patients_collection.find(query)
@@ -222,7 +214,7 @@ def read_patients_info():
             #filtered_doc = filter_empty_fields(doc)
             #print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
             return doc["_id"]
-
+ 
 def read_vital_signs(patient_id, start_date, end_date):
     start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
     end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
@@ -239,7 +231,7 @@ def read_vital_signs(patient_id, start_date, end_date):
     if vitalsigns_collection.count_documents(query) == 0:
         print("read_vital_signs not find.")
     else:
-
+ 
         for doc in documents:
             filtered_doc = filter_empty_fields(doc)
             key_mapping = {
@@ -255,9 +247,9 @@ def read_vital_signs(patient_id, start_date, end_date):
             print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
             temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
             text_description.append(temp)
-
+ 
     return text_description
-
+ 
 def read_nursingnote(patient_id, start_date, end_date):
     start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
     end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
@@ -280,7 +272,7 @@ def read_nursingnote(patient_id, start_date, end_date):
             temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
             text_description.append(temp)
     return text_description
-
+ 
 def read_nursingnotedetails(patient_id, start_date, end_date):
     start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
     end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
@@ -303,7 +295,7 @@ def read_nursingnotedetails(patient_id, start_date, end_date):
             temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
             text_description.append(temp)
     return text_description
-
+ 
 def read_nursingdiagnoses(patient_id, start_date, end_date):
     start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
     end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
@@ -326,7 +318,7 @@ def read_nursingdiagnoses(patient_id, start_date, end_date):
             temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
             text_description.append(temp)
     return text_description
-
+ 
 def read_nursingdiagnosisrecords(patient_id, start_date, end_date):
     start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
     end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
@@ -349,8 +341,8 @@ def read_nursingdiagnosisrecords(patient_id, start_date, end_date):
             temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
             text_description.append(temp)
     return text_description
-
-
+ 
+ 
 def generate_summary(text_description, start_date, end_date):
     url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}'
     headers = {'Content-Type': 'application/json'}
@@ -375,14 +367,14 @@ def NERAG(text):
     keywords = extract_keywords(text, DB) #得到關鍵字
     person_names_str = ", ".join(person_names)
     print("person_names:" + person_names_str)
-
+ 
     if len(dates) >= 2:
         start_date, end_date = dates[0], dates[-1]
     elif len(dates) == 1:
         start_date = end_date = dates[0]
     else:
         return "No valid date found in the text."
-
+ 
     patient_id = read_patients_info()
     if patient_id:
         text_description = []
@@ -407,8 +399,8 @@ def NERAG(text):
     else:
         print("Not find patient_id in NERAG.")
         return "Not find patient_id"
-
-
+ 
+ 
 '''
 @app.get("/", response_class=HTMLResponse)
 async def get_home():
@@ -418,30 +410,29 @@ async def get_home():
 '''
 from linkinpark.lib.common.fastapi_middleware import FastAPIMiddleware
 app.add_middleware(FastAPIMiddleware, path_prefix="/ai-ncopilot-ner")
-
+ 
 class TextInput(BaseModel):
     input_text: str
-
-# def token_c(a: str, b: str, token_data: TokenData = Depends(get_token_data))
-
+ 
+ 
 @app.post("/ai-ncopilot-ner/summary")
-async def api_extract_entities(input: TextInput, token_c):
+async def api_extract_entities(input: TextInput, token_data: TokenData = Depends(get_token_data)):
     if not input.input_text:
         raise HTTPException(status_code=400, detail="Text input is required")
-
+ 
     results = predict_and_extract_entities(input.input_text, tokenizer, model)
     person_names = extract_entities(results, 'PER')
     print("input:"+ input.input_text)
     #dates = extract_date(input.text)
     keywords = extract_keywords(input.input_text, DB)
-
+ 
     name_parts = [extract_name_parts(name) for name in person_names]
-
+ 
     result = NERAG(input.input_text)
-
+ 
     if "Failed to generate summary" in result:
         raise HTTPException(status_code=404, detail="Failed to generate summary or no data found.")
-
+ 
     return {
        # "from_date": from_date,
        # "to_date": to_date,
@@ -452,6 +443,3 @@ async def api_extract_entities(input: TextInput, token_c):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
- 

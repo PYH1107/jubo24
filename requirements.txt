@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pymongo
+torch
+transformers
+python-dotenv
+jieba
+requests
+psutil
