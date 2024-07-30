@@ -1,7 +1,7 @@
 
 from pymongo.mongo_client import MongoClient
 #from pymongo.server_api import ServerApi
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 #from typing import List, Dict
 from datetime import datetime, timedelta
@@ -19,7 +19,8 @@ from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 import requests
 from auth0.auth import get_token_data
- 
+from typing import List, Dict
+
 # Load environment variables
 load_dotenv()
 
@@ -415,6 +416,12 @@ class TextInput(BaseModel):
     input_text: str
  
  
+class TokenData(BaseModel):
+    sub: str
+    permissions: List[str] = []
+    roles: List[str] = []
+    app_metadata: Dict[str, str] = {}
+
 @app.post("/ai-ncopilot-ner/summary")
 async def api_extract_entities(input: TextInput, token_data: TokenData = Depends(get_token_data)):
     if not input.input_text:
@@ -424,9 +431,9 @@ async def api_extract_entities(input: TextInput, token_data: TokenData = Depends
     person_names = extract_entities(results, 'PER')
     print("input:"+ input.input_text)
     #dates = extract_date(input.text)
-    keywords = extract_keywords(input.input_text, DB)
+    # keywords = extract_keywords(input.input_text, DB)
  
-    name_parts = [extract_name_parts(name) for name in person_names]
+    # name_parts = [extract_name_parts(name) for name in person_names]
  
     result = NERAG(input.input_text)
  
