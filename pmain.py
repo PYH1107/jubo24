@@ -1,4 +1,4 @@
-
+# 能用 NER 就用 NER 
 from pymongo.mongo_client import MongoClient
 #from pymongo.server_api import ServerApi
 from fastapi import FastAPI, HTTPException
@@ -105,17 +105,7 @@ def extract_keywords(text, db):
     keywords = [word for word in words if word in db]
     return keywords
 
-def extract_date(text):
-    date_patterns = [
-        r'\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b',  # MM-DD-YYYY or MM/DD/YYYY
-        r'\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYYY-MM-DD or YYYY/MM/DD
-        r'\b(\d{4})年(\d{1,2})月(\d{1,2})日\b',  # YYYY年MM月DD日
-        r'\b(\d{1,2})月(\d{1,2})日(\d{4})年\b',  # MM月DD日YYYY年
-        r'\b民國(\d{1,3})年(\d{1,2})月(\d{1,2})日\b',  # 民國YYY年MM月DD日
-        r'\b(\d{2,3})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYY-MM-DD or YYY/MM/DD (民國年)
-    ]
-
-    def relative_date_to_absolute(relative_date):
+def relative_date_to_absolute(relative_date):
         today = datetime.today()
         if relative_date == "今天":
             return today.strftime("%Y-%m-%d")
@@ -129,6 +119,18 @@ def extract_date(text):
             return (today - timedelta(days=2)).strftime("%Y-%m-%d")
         else:
             return None
+
+def extract_date(text):
+    date_patterns = [
+        r'\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b',  # MM-DD-YYYY or MM/DD/YYYY
+        r'\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYYY-MM-DD or YYYY/MM/DD
+        r'\b(\d{4})年(\d{1,2})月(\d{1,2})日\b',  # YYYY年MM月DD日
+        r'\b(\d{1,2})月(\d{1,2})日(\d{4})年\b',  # MM月DD日YYYY年
+        r'\b民國(\d{1,3})年(\d{1,2})月(\d{1,2})日\b',  # 民國YYY年MM月DD日
+        r'\b(\d{2,3})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYY-MM-DD or YYY/MM/DD (民國年)
+    ]
+
+    
 
     dates = []
     for pattern in date_patterns:
@@ -340,7 +342,7 @@ def read_nursingdiagnosisrecords(patient_id, start_date, end_date):
     return text_description
 
 
-def generate_summary(text_description, start_date, end_date):
+def generate_summary(text_description):
     url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}'
     headers = {'Content-Type': 'application/json'}
     data = {
@@ -360,7 +362,9 @@ def generate_summary(text_description, start_date, end_date):
 def NERAG(text):
     results = predict_and_extract_entities(text, tokenizer, model) # 分詞提取的結果
     person_names = extract_entities(results, 'PER') # 從 NER 中 得到人名
-    dates = extract_date(text)# 從 NER 中 得到日期
+    dates_ = extract_entities(results, "DATE")# 從 NER 中 得到日期
+    absolute_dates = [relative_date_to_absolute(date) for date in dates if relative_date_to_absolute(date)]
+    dates = extract_date(text)
     keywords = extract_keywords(text, DB) #得到關鍵字
     person_names_str = ", ".join(person_names)
     print("person_names:" + person_names_str)

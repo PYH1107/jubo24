@@ -1,39 +1,45 @@
-from fastapi import FastAPI
-import uvicorn
-from pymongo import MongoClient
-from transformers import AutoTokenizer, AutoModel
-import requests
-import torch
-import json
-from bson import ObjectId
-#import openai
-from dotenv import load_dotenv
-import os
-import google.generativeai as genai
+# sky 說能用 NER 的地方盡量 NER
+from pymongo.mongo_client import MongoClient
+#from pymongo.server_api import ServerApi
+from fastapi import FastAPI, HTTPException,Depends
 from pydantic import BaseModel
-from transformers import AutoTokenizer, AutoModel
+#from typing import List, Dict
+from datetime import datetime, timedelta
+from transformers import AutoTokenizer, AutoModelForTokenClassification
 import torch
+import re
+import os
+import jieba
+import jieba.analyse
+#import jieba.posseg as pseg
+from bson import ObjectId
+import json
+import uvicorn
+from fastapi.responses import HTMLResponse
+from dotenv import load_dotenv
+import requests
+from auth0.auth import get_token_data
+from auth0.models import TokenData
 
-
-app = FastAPI()
+ 
 # Load environment variables
 load_dotenv()
-
+ 
 app = FastAPI()
 password = os.getenv('MONGODB_PASSWORD')
 API_KEY = os.getenv('API_KEY')
 uri = f"mongodb+srv://ai-nerag:{password}@ai-nerag.iiltl.mongodb.net/?retryWrites=true&w=majority"
-
+ 
 # Create a new client and connect to the server
 client = MongoClient(uri)
-
+ 
 # Send a ping to confirm a successful connection
 try:
     client.admin.command('ping')
     print("Pinged your deployment. You successfully connected to MongoDB!")
 except Exception as e:
     print(e)
-
+ 
 db = client['release']
 patients_collection = db["patients"]
 vitalsigns_collection = db["vitalsigns"]
@@ -41,183 +47,407 @@ nursingnotes_collection = db["nursingnotes"]
 nursingnotedetails_collection = db["nursingnotedetails"]
 nursingdiagnoses_collection = db["nursingdiagnoses"]
 nursingdiagnosisrecords_collection = db["nursingdiagnosisrecords"]
-
-# LLM 模型
-tokenizer = AutoTokenizer.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
-model = AutoModel.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
-
-# ---
-
-# Knowledge Base
-knowledge_base = [
-    # MongoDB 查詢相關
-    "MongoDB使用find()方法進行查詢。",
-    "使用$gt運算符表示大於。",
-    "使用$lt運算符表示小於。",
-    "使用$gte運算符表示大於等於。",
-    "使用$lte運算符表示小於等於。",
-    "使用$eq運算符表示等於。",
-    "使用$ne運算符表示不等於。",
-    "使用$in運算符表示在指定數組中。",
-    "使用$nin運算符表示不在指定數組中。",
-    "使用$and運算符表示與操作。",
-    "使用$or運算符表示或操作。",
-    "使用$exists運算符檢查欄位是否存在。",
-    "使用$type運算符檢查欄位類型。",
-    "使用$regex運算符進行正則表達式匹配。",
-    "使用$sort進行排序，1表示升序，-1表示降序。",
-    "使用$limit限制返回的文檔數量。",
-
-    # 數據結構示例
-    "患者記錄結構f：{'姓名': 'string', '年齡': 'int', '性別': 'string', '病歷號': 'string'}",
-    "生命徵象記錄結構：{'患者id': 'string', '時間': 'date', '體溫': 'float', '脈搏': 'int', '呼吸': 'int', '血壓': 'object'}",
-    # ... (其他數據結構)
-
-    # 查詢模式示例
-    "查詢特定患者的最新護理記錄：db.nursingNotes.find({'患者id': patientId}).sort({'時間': -1}).limit(1)",
-    "查詢特定患者的血壓數據：db.vitalSigns.find({'患者id': patientId, '血壓': {$exists: true}})",
-    # ... (其他查詢模式)
-
-    # 系統特定信息
-    "我們的系統使用'patient_id'作為患者唯一標識符。",
-    "所有時間戳都以ISO格式存儲。",
-    "護理記錄分為以下類型：日常觀察、用藥記錄、治療過程、評估結果。",
-]
-
-# 實體類型
-entity_types = {
-    "病人姓名": ["例如：王小明、張三、李四等"],
-    "數據類型": ["護理紀錄", "血壓數據", "心跳紀錄", "呼吸頻率", "血糖數據", "脈搏數據", "生命跡象數據",
-                "皮膚狀況紀錄", "排便紀錄", "活動量", "疼痛評估紀錄", "睡眠紀錄", "體重變化", "護理異常紀錄",
-                "用藥紀錄", "輸液紀錄", "飲食紀錄", "護理計畫", "藥物過敏紀錄", "體溫情況", "飲水紀錄"],
-    "時間": ["昨天", "前天", "大前天", "今天早上", "過去一週", "本月", "這兩天", "過去24小時", "這個星期"],
-    "特定護理項目": ["護理目標", "注射", "內容", "跌倒風險", "異常項目", "特別注意事項", "輸液時間"]
-}
-
-def identify_entities(query):
-    inputs = tokenizer(query, return_tensors="pt", padding=True, truncation=True, max_length=512)
+ 
+# 載入中研院 NER 模型
+def load_model_and_tokenizer():
+    tokenizer = AutoTokenizer.from_pretrained("ckiplab/bert-base-chinese-ner")
+    model = AutoModelForTokenClassification.from_pretrained("ckiplab/bert-base-chinese-ner")
+    return tokenizer, model
+ 
+tokenizer, model = load_model_and_tokenizer()
+ 
+'''
+class TextInput(BaseModel):
+    text: str
+'''
+ 
+def predict_and_extract_entities(text, tokenizer, model):
+    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
     outputs = model(**inputs)
-
-    # 這裡使用last_hidden_state作為特徵
-    features = outputs.last_hidden_state.squeeze().detach().numpy()
-
-    # 簡單的實體識別邏輯（這裡需要更複雜的邏輯來實現真正的NER）
-    entities = {}
-    for entity_type, examples in entity_types.items():
-        for example in examples:
-            if example in query:
-                entities[entity_type] = example
-                break
-
+    labels = torch.argmax(outputs.logits, dim=-1)
+    tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
+    label_names = model.config.id2label
+    results = [(token, label_names[label.item()]) for token, label in zip(tokens, labels[0])]
+    return results
+ 
+def extract_entities(results, entity_type):
+    entities = []
+    current_entity = []
+    for token, label in results:
+        if label.startswith(f'B-{entity_type}'):
+            if current_entity:
+                entities.append("".join(current_entity))
+                current_entity = []
+            current_entity.append(token)
+        elif label.startswith(f'I-{entity_type}') or label.startswith(f'E-{entity_type}'):
+            if token.startswith("##"):
+                current_entity[-1] += token[2:]
+            else:
+                current_entity.append(token)
+        elif current_entity:
+            entities.append("".join(current_entity))
+            current_entity = []
+    if current_entity:
+        entities.append("".join(current_entity))
     return entities
-'''
-def generate_mongo_query(natural_language_query, entities):
-    prompt = f"""
-    根據以下自然語言查詢和識別出的實體,生成一個MongoDB查詢:
-
-    自然語言查詢: {natural_language_query}
-    識別出的實體: {json.dumps(entities, ensure_ascii=False)}
-
-    知識庫:
-    {json.dumps(knowledge_base, ensure_ascii=False)}
-
-    請生成一個有效的MongoDB查詢字典。
-    """
-
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "你是一個專門將自然語言轉換為MongoDB查詢的助手。"},
-            {"role": "user", "content": prompt}
-        ]
-    )
-
-    mongo_query = json.loads(response.choices[0].message.content)
-    return mongo_query
-'''
-
-def generate_mongo_query(natural_language_query, entities):
-    prompt = f"""
-    根據以下自然語言查詢和識別出的實體,生成一個MongoDB查詢:
-
-    自然語言查詢: {natural_language_query}
-    識別出的實體: {json.dumps(entities, ensure_ascii=False)}
-
-    知識庫:
-    {json.dumps(knowledge_base, ensure_ascii=False)}
-
-    請生成一個有效的MongoDB查詢字典。僅返回 JSON 格式的查詢字典，不要包含任何其他解釋。
-    """
-
-    response = model.generate_content(prompt)
-
-    try:
-        # 嘗試解析回應為JSON
-        mongo_query = json.loads(response.text)
-    except json.JSONDecodeError:
-        # 如果解析失敗，返回一個空查詢
-        print("無法解析Gemini的回應為有效的JSON。回應內容：", response.text)
-        mongo_query = {}
-
-    return mongo_query
-
-def execute_mongo_query(mongo_query):
-    # 根據查詢內容決定使用哪個集合
-    if "患者" in mongo_query:
-        result = list(patients_collection.find(mongo_query))
-    elif "生命徵象" in mongo_query:
-        result = list(vitalsigns_collection.find(mongo_query))
-    elif "護理記錄" in mongo_query:
-        result = list(nursingnotes_collection.find(mongo_query))
+ 
+def extract_name_parts(full_name):
+    global first_name, last_name
+    if len(full_name) > 1:
+        last_name = full_name[0]
+        first_name = full_name[1:]
+        return {"lastName": last_name ,"firstName": first_name}
     else:
-        result = list(db.command("aggregate", "patients", pipeline=[mongo_query]))
+        return {"lastName": last_name ,"firstName": first_name}
+ 
+# 有 keyword DB
+DB = ["生命跡象", "護理紀錄"]
+ 
+def extract_keywords(text, db):
+    for keyword in db:
+        jieba.add_word(keyword)
+    words = jieba.lcut(text)
+    keywords = [word for word in words if word in db]
+    return keywords
+ 
+def extract_date(text):
+    date_patterns = [
+        r'\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b',  # MM-DD-YYYY or MM/DD/YYYY
+        r'\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYYY-MM-DD or YYYY/MM/DD
+        r'\b(\d{4})年(\d{1,2})月(\d{1,2})日\b',  # YYYY年MM月DD日
+        r'\b(\d{1,2})月(\d{1,2})日(\d{4})年\b',  # MM月DD日YYYY年
+        r'\b民國(\d{1,3})年(\d{1,2})月(\d{1,2})日\b',  # 民國YYY年MM月DD日
+        r'\b(\d{2,3})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYY-MM-DD or YYY/MM/DD (民國年)
+    ]
+ 
 
-    # 轉換 ObjectId 為字符串
-    for doc in result:
-        doc['_id'] = str(doc['_id'])
+ 
+    dates = []
+    for pattern in date_patterns:
+        matches = re.finditer(pattern, text)
+        for match in matches:
+            try:
+                groups = match.groups()
+                if len(groups) == 3:
+                    if '年' in pattern or '月' in pattern or '日' in pattern:
+                        if '民國' in pattern:
+                            year = int(groups[0]) + 1911
+                        else:
+                            year = int(groups[0])
+ 
+                        month = int(groups[1])
+                        day = int(groups[2])
+                    elif len(groups[0]) == 4:  # YYYY-MM-DD
+                        year, month, day = map(int, groups)
+                    elif len(groups[2]) == 4:  # MM-DD-YYYY
+                        month, day, year = map(int, groups)
+                    else:  # YYY-MM-DD (民國年)
+                        year = int(groups[0]) + 1911
+                        month, day = map(int, groups[1:])
+ 
+                    if 1 <= month <= 12 and 1 <= day <= 31:
+                        if year < 1911:  # 處理可能的民國年份
+                            year += 1911
+                        parsed_date = datetime(year, month, day)
+                        formatted_date = parsed_date.strftime('%Y-%m-%d')
+                        if formatted_date not in dates:
+                            dates.append(formatted_date)
+            except ValueError:
+                # 如果日期無效，跳過
+                continue
+   
+    # 處理相對日期
+    relative_dates = ["今天", "昨天", "昨日", "大前天", "大前日", "前天", "前日"]
+    processed_text = text
+    for rel_date in relative_dates:
+        if rel_date in processed_text:
+            abs_date = relative_date_to_absolute(rel_date)
+            if abs_date and abs_date not in dates:
+                dates.append(abs_date)
+            processed_text = processed_text.replace(rel_date, '')  # 移除已處理的日期
+ 
+    global from_date, to_date
+    dates = sorted(dates)  # 按日期排序
+    if len(dates) == 1:
+        from_date = dates[0]
+        to_date = dates[0]
+        dates = [from_date, to_date]
+    elif len(dates) > 1:
+        from_date = dates[0]
+        to_date = dates[-1]
+        dates = [from_date, to_date]
+ 
+    return dates
+ 
+ 
+# 自訂 JSON 編碼器
+class JSONEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, ObjectId):
+            return str(o)
+        if isinstance(o, datetime):
+            return o.isoformat()
+        return super(JSONEncoder, self).default(o)
+ 
+# 過濾空欄位
+def filter_empty_fields(doc):
+    return {k: v for k, v in doc.items() if v}
+ 
+def read_patients_info():
+    query = {"lastName": last_name, "firstName": first_name}
+    documents = patients_collection.find(query)
+    if patients_collection.count_documents(query) == 0:
+        print("Not find patient name.")
+    else:
+        for doc in documents:
+            #filtered_doc = filter_empty_fields(doc)
+            #print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            return doc["_id"]
 
-    return result
 
-def generate_summary(query_result):
-    prompt = f"""
-    根據以下查詢結果生成一個簡短的摘要:
-
-    {json.dumps(query_result, ensure_ascii=False)}
-
-    摘要應該包含關鍵信息,並且易於理解。
-    """
-
-    response = model.generate_content(prompt)
-    return response.text
-
-
-class QueryRequest(BaseModel):
-    query: str
-
-def process_nursing_query(natural_language_query):
-    entities = identify_entities(natural_language_query)
-    mongo_query = generate_mongo_query(natural_language_query, entities)
-    query_result = execute_mongo_query(mongo_query)
-    summary = generate_summary(query_result)
-
-    return {
-        "original_query": natural_language_query,
-        "entities": entities,
-        "mongo_query": mongo_query,
-        "query_result": query_result,
-        "summary": summary
+def relative_date_to_absolute(relative_date):
+    today = datetime.today()
+    if relative_date == "今天":
+        return today.strftime("%Y-%m-%d")
+    elif relative_date == "昨天" or relative_date == "昨日":
+        return (today - timedelta(days=1)).strftime("%Y-%m-%d")
+    elif relative_date == "大前天" or relative_date == "大前日":
+        #print("大前天")
+        return (today - timedelta(days=3)).strftime("%Y-%m-%d")
+    elif relative_date == "前天" or relative_date == "前日":
+        #print("前天")
+        return (today - timedelta(days=2)).strftime("%Y-%m-%d")
+    else:
+        return None
+    
+    
+def read_vital_signs(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+    query = {
+        "patient": ObjectId(patient_id),
+        "createdDate": {
+            "$gte": start_datetime,
+            "$lte": end_datetime
+        }
     }
+    projection = {"PR": 1, "RR": 1, "SYS": 1, "TP": 1, "DIA": 1, "SPO2": 1, "PAIN": 1, "createdDate": 1, "_id": 0}  # 投影指定欄位
+    documents = vitalsigns_collection.find(query, projection)
+    text_description = []
+    if vitalsigns_collection.count_documents(query) == 0:
+        print("read_vital_signs not find.")
+    else:
+ 
+        for doc in documents:
+            filtered_doc = filter_empty_fields(doc)
+            key_mapping = {
+                "PR": "脈搏率",
+                "SYS": "收縮壓",
+                "DIA": "舒張壓",
+                "SPO2": "血氧飽和度",
+                "TP": "體溫",
+                "RR": "呼吸頻率",
+                "createdDate": "記錄時間"
+            }
+            filtered_doc = {key_mapping.get(k, k): v for k, v in filtered_doc.items()}
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
+            text_description.append(temp)
+ 
+    return text_description
+ 
+def read_nursingnote(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+    query = {
+        "patient": ObjectId(patient_id),
+        "createdDate": {
+            "$gte": start_datetime,
+            "$lte": end_datetime
+        }
+    }
+    projection = {"_id": 1, "focus": 1, "createdDate": 1}
+    documents = nursingnotes_collection.find(query, projection)
+    text_description = []
+    if nursingnotes_collection.count_documents(query) == 0:
+        print("read_nursingnote not find.")
+    else:
+        for doc in documents:
+            filtered_doc = filter_empty_fields(doc)
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
+            text_description.append(temp)
+    return text_description
+ 
+def read_nursingnotedetails(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+    query = {
+        "patient": ObjectId(patient_id),
+        "createdDate": {
+            "$gte": start_datetime,
+            "$lte": end_datetime
+        }
+    }
+    projection = {"_id": 0, "content": 1, "createdDate": 1}
+    documents = nursingnotedetails_collection.find(query, projection)
+    text_description = []
+    if nursingnotedetails_collection.count_documents(query) == 0:
+        print("read_nursingnotedetails not find.")
+    else:
+        for doc in documents:
+            filtered_doc = filter_empty_fields(doc)
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
+            text_description.append(temp)
+    return text_description
+ 
+def read_nursingdiagnoses(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+    query = {
+        "patient": ObjectId(patient_id),
+        "createdDate": {
+            "$gte": start_datetime,
+            "$lte": end_datetime
+        }
+    }
+    projection = {"_id": 0, "features": 1, "createdDate": 1, "goals": 1, "plans": 1, "attr": 1}
+    documents = nursingdiagnoses_collection.find(query, projection)
+    text_description = []
+    if nursingdiagnoses_collection.count_documents(query) == 0:
+        print("read_nursingdiagnoses not find.")
+    else:
+        for doc in documents:
+            filtered_doc = filter_empty_fields(doc)
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
+            text_description.append(temp)
+    return text_description
+ 
+def read_nursingdiagnosisrecords(patient_id, start_date, end_date):
+    start_datetime = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S")
+    end_datetime = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+    query = {
+        "patient": ObjectId(patient_id),
+        "createdDate": {
+            "$gte": start_datetime,
+            "$lte": end_datetime
+        }
+    }
+    projection = {"_id": 0, "evaluation": 1, "goals": 1, "createdDate": 1}
+    documents = nursingdiagnosisrecords_collection.find(query, projection)
+    text_description = []
+    if nursingdiagnosisrecords_collection.count_documents(query) == 0:
+        print("read_nursingdiagnosisrecords not find.")
+    else:
+        for doc in documents:
+            filtered_doc = filter_empty_fields(doc)
+            print(json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder))
+            temp = json.dumps(filtered_doc, ensure_ascii=False, indent=4, cls=JSONEncoder)
+            text_description.append(temp)
+    return text_description
+ 
+ 
+def generate_summary(text_description, start_date, end_date):
+    url = f'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}'
+    headers = {'Content-Type': 'application/json'}
+    data = {
+        "contents": [
+            {
+                "parts": [{"text": f"請為王小明的數據，要生成一個自然的摘要描述{{{text_description}}}"}]
+            }
+        ]
+    }
+    response = requests.post(url, headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+    return None
 
+    
+# generate responses
+def NERAG(text):
+    results = predict_and_extract_entities(text, tokenizer, model) # 分詞提取的結果
+    person_names = extract_entities(results, 'PER') # 從 NER 中 得到人名
+    dates = extract_entities(results, "DATE")
+    absolute_dates = [relative_date_to_absolute(date) for date in dates if relative_date_to_absolute(date)]
+    dates = extract_date(' '.join(absolute_dates))  # 從 NER 中 得到日期，確保傳遞字符串
+    keywords = extract_keywords(text, DB) #得到關鍵字
+    person_names_str = ", ".join(person_names)
+    print("person_names:" + person_names_str)
 
-@app.post("/process_query")
-async def api_process_query(query: str):
-    result = process_nursing_query(query)
-    return result
+    if len(dates) >= 2:
+        start_date, end_date = dates[0], dates[-1]
+    elif len(dates) == 1:
+        start_date = end_date = dates[0]
+    else:
+        return "No valid date found in the text."
 
-@app.post("/generate_summary")
-async def api_generate_summary(text: str):
-    summary = generate_summary(text)
-    return {"summary": summary}
-
+    patient_id = read_patients_info()
+    if patient_id:
+        text_description = []
+        if "生命跡象" in keywords:
+            text_description.extend(read_vital_signs(patient_id, dates[0], dates[1]))
+        if "護理紀錄" in keywords:
+            text_description.extend(read_nursingnote(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingnotedetails(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingdiagnoses(patient_id, dates[0], dates[1]))
+            text_description.extend(read_nursingdiagnosisrecords(patient_id, dates[0], dates[1]))
+        if not text_description:
+            print("All info not find")
+            return "All patient info does not find in date range."
+        else:
+            summary = generate_summary(text_description, start_date, end_date)
+            if summary:
+                summary = summary.replace("王小明", last_name + first_name)
+                print("summary=" + summary)
+                return summary
+            return "Failed to generate summary."
+    else:
+        print("Not find patient_id in NERAG.")
+        return "Not find patient_id"
+ 
+ 
+'''
+@app.get("/", response_class=HTMLResponse)
+async def get_home():
+    with open("index.html", "r", encoding="utf-8") as file:
+        html_content = file.read()
+    return HTMLResponse(content=html_content)
+'''
+from linkinpark.lib.common.fastapi_middleware import FastAPIMiddleware
+app.add_middleware(FastAPIMiddleware, path_prefix="/ai-ncopilot-ner")
+ 
+class TextInput(BaseModel):
+    input_text: str
+ 
+ 
+@app.post("/ai-ncopilot-ner/summary")
+#async def api_extract_entities(input: TextInput, token_data: TokenData = Depends(get_token_data)):
+async def api_extract_entities(input: TextInput):
+    if not input.input_text:
+        raise HTTPException(status_code=400, detail="Text input is required")
+ 
+    results = predict_and_extract_entities(input.input_text, tokenizer, model)
+    person_names = extract_entities(results, 'PER')
+    print("input:"+ input.input_text)
+    #dates = extract_date(input.text)
+    keywords = extract_keywords(input.input_text, DB)
+ 
+    name_parts = [extract_name_parts(name) for name in person_names]
+ 
+    result = NERAG(input.input_text)
+ 
+    if "Failed to generate summary" in result:
+        raise HTTPException(status_code=404, detail="Failed to generate summary or no data found.")
+ 
+    return {
+       # "from_date": from_date,
+       # "to_date": to_date,
+       # "person_names": name_parts,
+       # "keywords": keywords,
+        "result": result
+    }
+ 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
