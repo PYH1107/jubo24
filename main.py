@@ -101,7 +101,22 @@ def extract_name_parts(full_name):
  
 # 有 keyword DB
 DB = ["生命跡象", "護理紀錄"]
- 
+
+def relative_date_to_absolute(relative_date):
+    today = datetime.today()
+    if relative_date == "今天":
+        return today.strftime("%Y-%m-%d")
+    elif relative_date == "昨天" or relative_date == "昨日":
+        return (today - timedelta(days=1)).strftime("%Y-%m-%d")
+    elif relative_date == "大前天" or relative_date == "大前日":
+        #print("大前天")
+        return (today - timedelta(days=3)).strftime("%Y-%m-%d")
+    elif relative_date == "前天" or relative_date == "前日":
+        #print("前天")
+        return (today - timedelta(days=2)).strftime("%Y-%m-%d")
+    else:
+        return None
+        
 def extract_keywords(text, db):
     for keyword in db:
         jieba.add_word(keyword)
@@ -118,21 +133,6 @@ def extract_date(text):
         r'\b民國(\d{1,3})年(\d{1,2})月(\d{1,2})日\b',  # 民國YYY年MM月DD日
         r'\b(\d{2,3})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYY-MM-DD or YYY/MM/DD (民國年)
     ]
- 
-    def relative_date_to_absolute(relative_date):
-        today = datetime.today()
-        if relative_date == "今天":
-            return today.strftime("%Y-%m-%d")
-        elif relative_date == "昨天" or relative_date == "昨日":
-            return (today - timedelta(days=1)).strftime("%Y-%m-%d")
-        elif relative_date == "大前天" or relative_date == "大前日":
-            #print("大前天")
-            return (today - timedelta(days=3)).strftime("%Y-%m-%d")
-        elif relative_date == "前天" or relative_date == "前日":
-            #print("前天")
-            return (today - timedelta(days=2)).strftime("%Y-%m-%d")
-        else:
-            return None
  
     dates = []
     for pattern in date_patterns:
@@ -364,7 +364,9 @@ def generate_summary(text_description, start_date, end_date):
 def NERAG(text):
     results = predict_and_extract_entities(text, tokenizer, model) # 分詞提取的結果
     person_names = extract_entities(results, 'PER') # 從 NER 中 得到人名
-    dates = extract_date(text)# 從 NER 中 得到日期
+    dates = extract_entities(results, "DATE")
+    absolute_dates = [relative_date_to_absolute(date) for date in dates if relative_date_to_absolute(date)]
+    dates = extract_date(' '.join(absolute_dates))  # 從 NER 中 得到日期，確保傳遞字符串
     keywords = extract_keywords(text, DB) #得到關鍵字
     person_names_str = ", ".join(person_names)
     print("person_names:" + person_names_str)
