@@ -419,7 +419,7 @@ class TextInput(BaseModel):
  
  
 @app.post("/ai-ncopilot-ner/summary")
-async def api_extract_entities(input: TextInput, token_data: TokenData = Depends(get_token_data)):
+async def api_extract_entities(input: TextInput):
     if not input.input_text:
         raise HTTPException(status_code=400, detail="Text input is required")
  
