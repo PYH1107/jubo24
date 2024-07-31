@@ -56,7 +56,7 @@ def load_model_and_tokenizer():
 tokenizer, model = load_model_and_tokenizer()
  
 '''
-class TextInput(BaseModel):
+class TextInput(BaseModel):q
     text: str
 '''
  
