@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>知情同意書</title>
+    <link rel="stylesheet" type="text/css" href="/ds-manage-assistant-info-web/static/style.css">
+    <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <script src="/ds-manage-assistant-info-web/static/logInformed.js"></script>
+</head>
+<body onload='serviceTerm("{{ liff_id }}")'>
+    <div>
+        {{ content|safe }}
+    </div>
+    <script charset="utf-8" src="/ds-manage-assistant-info-web/static/redirectECPay.js"></script>
+    <div class="center">
+        <button id="agree-button"
+                onclick='go_payment("{{ liff_id }}")'>
+            我已閱讀並同意相關條款
+        </button>
+    </div>
+</body>
+</html>

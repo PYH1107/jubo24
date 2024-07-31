@@ -1,0 +1,2 @@
+table_name: "patients"
+today: "this_param_should_dynamically_be_updated"

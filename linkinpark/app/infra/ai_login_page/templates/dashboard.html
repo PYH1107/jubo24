@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<!--<html>-->
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+        <link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
+    </head>
+    <body>
+        <div class="w3-container">
+            <h1 id="logo" style="text-align:center;"><img src="https://yt3.ggpht.com/BZmNq6khqozArwAvvG6zMs24kkqsm5YeX0jJaylPCd196NM8Vwyp68JQ3zmNmb-RqqMC0tDCWQ=s900-c-k-c0x00ffffff-no-rj" width="150" height="80" /></h1>
+            <h2>Welcome {{authinfo['userinfo']['name']}}</h2>
+            <a id="copy-text" onclick="copy()">
+                <span class="glyphicon glyphicon-copy"></span> Copy Token
+            </a>
+            <pre id="auth_info">{{authinfo_pretty}}</pre>
+            <a href="{{base_url}}/logout">
+                <span class="glyphicon glyphicon-log-out"></span> Logout
+            </a>
+        </div>
+    </body>
+    <script>
+        var decodeHtmlEntity = function(str) {
+          return str.replace(/&#(\d+);/g, function(match, dec) {
+            return String.fromCharCode(dec);
+          });
+        };
+
+        var copy = function() {
+            var content = {{ authinfo_pretty|tojson }};
+            var obj = JSON.parse(content);
+            navigator.clipboard.writeText(obj.id_token);
+            document.getElementById("copy-text").innerHTML = '<span class="glyphicon glyphicon-ok"></span> Copied!';
+        };
+    </script>
+<!--</html>-->
+
+

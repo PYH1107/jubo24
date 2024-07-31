@@ -1,0 +1,34 @@
+{
+    "TP":"體溫,TP,溫度,BT,temperature,腋溫,耳溫,額溫,肛溫",
+    "HR":"脈搏,HR,PR,心跳,心率,pulse,heartrate",
+    "RR":"RR,呼吸率,呼吸",
+    "BP":{
+        "BP":"血壓,bp,NBP,blood pressure,pressure",
+        "SBP":"收縮壓,SBP,sys,Systolicbloodpressure",
+        "DBP":"舒張壓,DBP,dia,Diastolicbloodpressure"
+    },
+    "SPO2":"血氧,spo two,spo,oximeter,spo2",
+    "FLOW":"供氧,flow,nasal,mask,O2,NC",
+    "PAIN":"疼痛,疼痛分數,pain",
+    "INFECTION":[
+        {"cough":"cough,咳嗽"},
+        {"throat":"sore throat,喉嚨痛"},
+        {"Tachypnea":"Tachypnea,呼吸急促"},
+        {"Runny":"Runny nose,流鼻涕,鼻水"},
+        {"soreness":"soreness,痠痛,肌肉痠痛,酸痛,肌肉酸痛"},
+        {"headache":"headache,頭痛"},  
+        {"fatigue":"fatigue,倦怠,極度倦怠感"},
+        {"diarrhea":"diarrhea,腹瀉,拉肚子"},
+        {"vomit":"vomit,嘔吐"},
+        {"itchy":"itchy,皮膚紅癢,紅癢,癢,skinrash,疹子"},
+        {"urine":"尿液異常,尿液混濁,尿液乳白,血尿,尿中帶血,尿液有血絲"},
+        {"smell":"smell abnormal,嗅味覺異常,嗅味"}
+    ],
+    "MOOD":[
+        {"pleasant":"pleasant,happy,開心"},
+        {"calm":"calm,peace,平靜,冷靜"},
+        {"blue":"melancho,blue,憂鬱"},
+        {"irritable":"irritable,躁動,激動"},
+        {"uncomfortable":"uncomfortable,notfeelwell,不舒服"}
+    ]
+}

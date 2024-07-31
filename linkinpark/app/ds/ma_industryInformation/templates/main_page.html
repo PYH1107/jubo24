@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>長照政策快遞</title>
+    <link rel="stylesheet" type="text/css" href="/ds-manage-assistant-info-web/static/style.css?v=<?=time()?>">
+    <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+</head>
+
+<body onload='getToken("{{ liff_id }}")'>
+    <script src="/ds-manage-assistant-info-web/static/webRedirect.js"></script>
+    <div class="header">
+        <h1>長照政策快遞</h1>
+        <h2 class="sub-title">365天即時提供最新中央、縣市政府公告</h2>
+    </div>
+    <div id="selection-form">
+        <form action="/ds-manage-assistant-info-web/search" method="get">
+            <div>
+                <label for="tag" onclick='logLabelClick("{{value}}")'>類別：</label>
+                <select id="tag" name="tag" onChange="updateSelectionText()">
+                    <option value="補助計畫,課程、活動,公告,其他">全部</option>
+                    <option value="補助計畫">補助計畫</option>
+                    <option value="課程、活動">課程、活動</option>
+                    <option value="公告">公告</option>
+                    <option value="其他">其他</option>
+                </select>
+            </div>
+            <div>
+                <label for="county" onclick='logLabeClick("{{value}}")'>縣市：</label>
+                <select id="county" name="county" onChange="updateSelectionText()">
+                    <option value="臺北市,衛福部,線上">臺北市</option>
+                    <option value="新北市,衛福部,線上">新北市</option>
+                    <option value="桃園市,衛福部,線上">桃園市</option>
+                    <option value="臺中市,衛福部,線上">臺中市</option>
+                    <option value="臺南市,衛福部,線上">臺南市</option>
+                    <option value="高雄市,衛福部,線上">高雄市</option>
+                    <option value="宜蘭縣,衛福部,線上">宜蘭縣</option>
+                    <option value="基隆市,衛福部,線上">基隆市</option>
+                    <option value="新竹縣,衛福部,線上">新竹縣</option>
+                    <option value="苗栗縣,衛福部,線上">苗栗縣</option>
+                    <option value="南投縣,衛福部,線上">南投縣</option>
+                    <option value="嘉義市,衛福部,線上">嘉義市</option>
+                    <option value="屏東縣,衛福部,線上">屏東縣</option>
+                    <option value="臺東縣,衛福部,線上">臺東縣</option>
+                    <option value="花蓮縣,衛福部,線上">花蓮縣</option>
+                    <option value="澎湖縣,衛福部,線上">澎湖縣</option>
+                    <option value="金門縣,衛福部,線上">金門縣</option>
+                </select>
+            </div>
+            <div>
+                <input type="submit" value="選擇">
+            </div>
+        </form>
+    </div> 
+    <script charset="utf-8" src="/ds-manage-assistant-info-web/static/logFilter.js"></script>
+    <script charset="utf-8" src="/ds-manage-assistant-info-web/static/logClicked.js"></script>
+    <div id="loading-message" style="display: none;">
+        <h1 class="larger-text">努力抓取資料中...</h1>
+    </div>
+    <div id="table-container" style="display:block;">
+        <!--最新消息-->
+        {% if latest_data %}
+        <div class="table" width="90%">
+            <h3>最新消息</h3>
+            <table class="bordered">
+                <tr>
+                    <th width="10%">縣市</th>
+                    <th width="20%">部門</th>
+                    <th width="10%">日期</th>
+                    <th width="10%">類別</th>
+                    <th width="50%">標題</th>
+                </tr>
+                {% for row in latest_data %}
+                <tr>
+                    <td>
+                        {% if row.seven_day == true %}
+                        <span class="hot-badge">Hot</span>
+                        {% endif %}
+                        {{ row.county }}
+                    </td>
+                    <td>{{ row.department }}</td>
+                    <td>{{ row.date }}</td>
+                    <td>{{ row.tag }}</td>
+                    <td>
+                        <a href="{{ row.link }}" onclick='handleClick(event, "{{ liff_id }}", "{{ row.title }}", "{{ row.link }}", "{{ row.tag }}")'>{{ row.title }}</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        {% else %}
+        <h2>近期無最新消息發佈，若有公告會立即通知您</h2>
+        {% endif %}
+
+        <!--類別消息-->
+        {% if table_data %}
+        {% for tag, rows in table_data.items() %}
+        <div class="table", width="85%">
+            <h3>{{ tag }}</h3>
+            <table class="bordered">
+                <tr>
+                    <th width="10%">縣市</th>
+                    <th width="15%">部門</th>
+                    <th width="15%">日期</th>
+                    <th width="60%">標題</th>
+                </tr>
+                {% for row in rows %}
+                <tr>
+                    <td>{{ row.county }}</td>
+                    <td>{{ row.department }}</td>
+                    <td>{{ row.date }}</td>
+                    <td>
+                        <a href="{{ row.link }}" onclick='handleClick(event, "{{ liff_id }}", "{{ row.title }}", "{{ row.link }}", "{{ row.tag }}")'>{{ row.title }}</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        {% endfor %}
+        {% else %}
+        <h2>尚未有資料，未來持續新增中</h2>
+        {% endif %}
+    </div>
+    <div class="scroll-to-top" onclick="scrollToTop()"><img src ="/ds-manage-assistant-info-web/static/scroll_to_top.png"></div>
+    <script charset="utf-8" src="/ds-manage-assistant-info-web/static/renderRedirect.js"></script>
+</body>
+</html>

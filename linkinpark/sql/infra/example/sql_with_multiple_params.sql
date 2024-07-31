@@ -1,0 +1,1 @@
+SELECT * FROM `jubo-ai.raw_{{ env }}_datahub_mongo.{{ table_name }}` LIMIT 0

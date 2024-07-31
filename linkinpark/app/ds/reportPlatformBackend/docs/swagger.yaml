@@ -1,0 +1,320 @@
+components:
+  schemas:
+    FullName:
+      properties:
+        name:
+          description: The official name of the organization in string format
+          minLength: 4
+          title: Organization's name
+          type: string
+      required:
+      - name
+      title: FullName
+      type: object
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          title: Detail
+          type: array
+      title: HTTPValidationError
+      type: object
+    NickName:
+      properties:
+        nickname:
+          description: The nickname of the organization in string format
+          minLength: 2
+          title: Organization's nickname
+          type: string
+      required:
+      - nickname
+      title: NickName
+      type: object
+    Queries:
+      example:
+        end: '2023-01-31'
+        org: 5c10bdf47b43650f407de7d6
+        request_at: '2023-02-01T08:00:00.000Z'
+        request_id: idStringSendFromFrontend
+        start: '2023-01-01'
+        suffix: '{"key": "value"}'
+        user_id: userIdProvidedByFrontend
+      properties:
+        end:
+          description: The end date of the querying period in ISO 8601 format.
+          format: date
+          title: End date
+          type: string
+        org:
+          description: It should be a 24 character composed ObjectID.
+          maxLength: 24
+          minLength: 24
+          title: Organization ID
+          type: string
+        request_at:
+          description: The request time record by front end service.
+          format: date-time
+          title: Request sent time
+          type: string
+        request_id:
+          description: It should be a 24 character composed ObjectID.
+          maxLength: 24
+          minLength: 24
+          title: Request ID
+          type: string
+        start:
+          description: The start date of the querying period in ISO 8601 format.
+          format: date
+          title: Start date
+          type: string
+        suffix:
+          description: Additional parameter pass to the report generate function.
+            The format should be a JSON like string, but key value depends on each
+            report.
+          title: Suffix
+          type: string
+        user_id:
+          description: The log in user's ID.
+          title: User ID
+          type: string
+      required:
+      - request_id
+      - user_id
+      - request_at
+      - org
+      - start
+      - end
+      title: Queries
+      type: object
+    ReportOptions:
+      description: An enumeration.
+      enum:
+      - hualien_homecare_community_different_report
+      - host_amount
+      - kaohsiung_solitary_elder_report
+      - respite_diary
+      - chiayi_homecare_community_report
+      - tube_quality_index
+      - export_exam_report
+      - pain_report
+      - hualien_homecare_community_report
+      - pingtung_solitary_elder_report
+      - person_group_activity
+      - pain_level
+      - transfer_statistic
+      - pain_group
+      - profession_referral
+      - tainan_community_report
+      - taipei_homecare_community_report
+      - patient_staff_statistic
+      - exam_anomaly
+      - urinary_tube_day_count
+      - change_tubes
+      - month_activity
+      - treat_plan
+      - iadl_evaluation_statistic
+      - activity_record
+      - fall_events
+      - smart_schedule_month
+      - blood_sugar_test_frequency
+      - smart_schedule_activity
+      - remove_tubes
+      - trans_hospital
+      - taoyuan_community_report
+      - error_report
+      - assistive_assessment
+      - hualien_solitary_elder_report
+      - taoyuan_homecare_community_report
+      title: ReportOptions
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          title: Location
+          type: array
+        msg:
+          title: Message
+          type: string
+        type:
+          title: Error Type
+          type: string
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+      type: object
+info:
+  description: "# ROUTINE REPORT PLATFORM (RRPF)\nPOC: [Shen Chiang](mailto:shenchiang@jubo.health),\
+    \ [Lucy Chou](mailto:lucychou@jubo.health), [Emma Wang](mailto:emmawang@jubo.health)\n\
+    \nThis API is the backend of the third generation of Jubo's routine report \n\
+    platform. The main feature of this version is make the service an API and \nallow\
+    \ user to generate result manually through user interface on a browser \nor POST\
+    \ request via other services.\n\n## Major Features\n- Structure modified to fit\
+    \ openAPI's specification via FastAPI framework.\n- Report name was set inside\
+    \ report files, instead of subscription list.\n- POC set for each report, and\
+    \ will be presented when error appeared.\n\n## Usage\n### Input\n- To generate\
+    \ a report, a `POST` request must be sent to the report's URL \n  with **org**,\
+    \ **start**, **end** and **suffix**(optional) as body.<br> \n  (Please refer to\
+    \ the docs generated by FastAPI for the schema of the dody.)\n- The report's URL\
+    \ will be named by its function name as subdomain.<br>\n  (eg. The function name\
+    \ for generating the \u932F\u8AA4\u6E2C\u8A66\u7528\u5831\u544A is `error_report`.\
+    \ \n  Therefore, the subdomain for this report will be `/error_report`)\n- All\
+    \ current available reports with its function name in parentheses will \n  be\
+    \ listed in the *Current available reports* section.\n\n### Output\n- If the report\
+    \ was generated successfully, then the report file in bytes \n  will be returned.\n\
+    - Else an HTML document with detailed error message will be given \n  as alternative.\
+    \ \n\n## Maintenance\n### Create New Reports\n1. Create a new file in the folder\
+    \ `./reports`.\n2. The function name should be exact the same as the file name\
+    \ (without the \n   file suffix *.py*).\n3. A docstring must exist at top, which\
+    \ contains the **reportName** and \n   **POC** of that report.\n4. The input of\
+    \ the function must include **org**, **start**, **end** and \n   **suffix**.\n\
+    5. The function must return a **BytesIO** object.\n6. Make good use of the customized\
+    \ exceptions in `./utils/exceptions.py` for \n   edge cases to pass the unit test.\n\
+    7. Try to make the error message meaningful, since if the user knows what went\
+    \ \n   wrong he/she may solve it by themselves.\n\n### Unit Test\n  *Unit test\
+    \ for this service was added on 2023-12-06*\n* Will use three organizations, one\
+    \ for each type to test.\\\n  *(residential, day care and home care)*\n* Will\
+    \ use five different query period to test.\\\n  *(1 day, 1 week, 1 month, 1 quarter\
+    \ and 1 year)*\n* All reports in the folder `./reports` will be tested.\\\n  *(All\
+    \ new reports will be add to test automatically)*\n* Customize exceptions will\
+    \ pass the unit test event if it was raised.\\\n  *(Those are already known errors,\
+    \ and this unit test aim to discover unknown\n    error.)*\n### TODO\n- **(Highest\
+    \ priority)** Avoid maintaining two versions, the original \n  distribution on\
+    \ **[Datarch](https://gitlab.smart-aging.tech/ds/infrastructure/datarch/-/tree/master/pipelines/ds_reportplatform_generator)**\n\
+    \  should be modified. In a future version, the pipeline on **Datarch** will \n\
+    \  only serve as a scheduler and call the API of this distribution.\n  (Actual\
+    \ update date still needs to be planed.)<br>\n  ***Warning: All developers must\
+    \ be aware not to differentiate the two \n  distribution before this update was\
+    \ done.***\n- Add bug reporting features. Now error message with POC of that report\
+    \ will be \n  shown to end user when failed generating a report. The user still\
+    \ needs to \n  copy the message and send it to the POC. By adding a button on\
+    \ the UI to auto \n  report bugs seems to be a good feature to try for enhancing\
+    \ the user \n  experience.\n## Current available reports\n* \u82B1\u84EE\u5C45\
+    \u670D\u9577\u671F\u7167\u9867\u5DEE\u7570\u5831\u8868 (hualien_homecare_community_different_report)\n\
+    * \u4F4F\u6C11\u4EBA\u65E5\u6578 (host_amount)\n* \u9AD8\u96C4\u7368\u8001\u5B63\
+    \u5831 (kaohsiung_solitary_elder_report)\n* \u7167\u9867\u65E5\u8A8C (respite_diary)\n\
+    * \u5609\u7FA9\u5C45\u670D\u9577\u671F\u7167\u9867\u5341\u5E74\u8A08\u756B (chiayi_homecare_community_report)\n\
+    * \u7BA1\u8DEF\u54C1\u8CEA\u6307\u6A19 (tube_quality_index)\n* \u532F\u51FA\u6AA2\
+    \u9A57\u5831\u544A (export_exam_report)\n* \u75BC\u75DB\u5217\u8868 (pain_report)\n\
+    * \u82B1\u84EE\u5C45\u670D\u9577\u671F\u7167\u9867\u5341\u5E74\u8A08\u756B (hualien_homecare_community_report)\n\
+    * \u5C4F\u6771\u7368\u8001\u5B63\u5831 (pingtung_solitary_elder_report)\n* \u5718\
+    \u9AD4\u6D3B\u52D5\u5831\u8868 (person_group_activity)\n* \u75BC\u75DB\u8A55\u4F30\
+    \ (pain_level)\n* \u4F4F\u6C11\u7D71\u8A08 (transfer_statistic)\n* \u75BC\u75DB\
+    \u76E3\u63A7\u6708\u5831 (pain_group)\n* \u8DE8\u5C08\u696D\u7167\u6703 (profession_referral)\n\
+    * \u53F0\u5357\u793E\u5340\u6708\u5831 (tainan_community_report)\n* \u53F0\u5317\
+    \u5C45\u670D\u793E\u5340\u6708\u5831 (taipei_homecare_community_report)\n* \u57FA\
+    \u672C\u8CC7\u6599 (patient_staff_statistic)\n* \u6AA2\u9A57\u7570\u5E38\u540D\
+    \u55AE (exam_anomaly)\n* \u5C0E\u5C3F\u7BA1\u4EBA\u65E5\u6578\u7D71\u8A08 (urinary_tube_day_count)\n\
+    * \u63DB\u7BA1\u540D\u518A (change_tubes)\n* \u884C\u4E8B\u66C6\u6D3B\u52D5\u6708\
+    \u5831\u8868 (month_activity)\n* \u5C31\u8A3A\u7E3D\u8868 (treat_plan)\n* IADL\u7E3D\
+    \u8868 (iadl_evaluation_statistic)\n* \u884C\u4E8B\u66C6\u6D3B\u52D5\u8A18\u9304\
+    \u8868 (activity_record)\n* \u8DCC\u5012\u7D00\u9304\u6708\u5831 (fall_events)\n\
+    * \u667A\u6167\u6392\u7A0B\u6D3B\u52D5\u6708\u5831\u8868 (smart_schedule_month)\n\
+    * \u8840\u7CD6\u7D00\u9304 (blood_sugar_test_frequency)\n* \u667A\u6167\u6392\u7A0B\
+    \u6D3B\u52D5\u8A18\u9304\u8868 (smart_schedule_activity)\n* \u79FB\u9664\u7BA1\
+    \u8DEF\u540D\u518A (remove_tubes)\n* \u4F4F\u6C11\u7570\u52D5 (trans_hospital)\n\
+    * \u6843\u5712\u793E\u5340\u6708\u5831 (taoyuan_community_report)\n* \u932F\u8AA4\
+    \u6E2C\u8A66\u7528\u5831\u544A (error_report)\n* \u8F14\u5177\u8A55\u4F30\u8868\
+    \ (assistive_assessment)\n* \u82B1\u84EE\u7368\u8001\u5B63\u5831 (hualien_solitary_elder_report)\n\
+    * \u6843\u5712\u5C45\u670D\u5831\u8868 (taoyuan_homecare_community_report)\n"
+  title: Jubo Report Platform
+  version: 3.0.a (Alpha testing)
+openapi: 3.0.2
+paths:
+  /ds-report-platform/:
+    get:
+      operationId: root_ds_report_platform__get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+      summary: Root
+  /ds-report-platform/search_id:
+    post:
+      operationId: search_id_by_name_ds_report_platform_search_id_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FullName'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Search Id By Name
+  /ds-report-platform/search_org:
+    post:
+      operationId: search_org_by_nickname_ds_report_platform_search_org_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NickName'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Search Org By Nickname
+  /ds-report-platform/search_reports:
+    post:
+      operationId: search_reports_ds_report_platform_search_reports_post
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+      summary: Search Reports
+  /ds-report-platform/{report_name}:
+    post:
+      operationId: generate_report_ds_report_platform__report_name__post
+      parameters:
+      - in: path
+        name: report_name
+        required: true
+        schema:
+          $ref: '#/components/schemas/ReportOptions'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Queries'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      summary: Generate Report

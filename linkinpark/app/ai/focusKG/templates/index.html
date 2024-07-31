@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Jubo.ai</title>
+    <link href="/static/css/style.css" rel="stylesheet" />
+    <script src="/static/js/jquery-1.11.2.min.js" type="text/javascript"></script>
+    <script src="/static/js/cytoscape.min.js" type="text/javascript"></script>
+
+    <h1>Jubo Focus Knowledge Graph</h1>
+
+    <script type="text/javascript" src="/static/js/graph.js"></script>
+
+    <script>default_function();</script>
+    <select id="selected_focus" onchange="change_function()">
+        <option value="">-- 選擇焦點 --</option>
+        {% for focus in dropdown_focus %}
+        <option value={{focus}}>{{focus}}</option>
+        {% endfor %}
+    </select>
+
+</head>
+
+<body>
+    <div id="cy"></div>
+</body>
+
+</html>
