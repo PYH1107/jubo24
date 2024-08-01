@@ -6,4 +6,6 @@
 .env.*
 
 # 忽略虛擬環境目錄
-venv/
+/myenv/
+
+/ai-ncopilot-ner/

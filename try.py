@@ -1,4 +1,6 @@
 # sky 說能用 NER 的地方盡量 NER
+
+
 from pymongo.mongo_client import MongoClient
 #from pymongo.server_api import ServerApi
 from fastapi import FastAPI, HTTPException,Depends

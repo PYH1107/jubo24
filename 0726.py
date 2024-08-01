@@ -3,7 +3,7 @@ import uvicorn
 from pymongo import MongoClient
 from transformers import AutoTokenizer, AutoModel
 from sentence_transformers import SentenceTransformer
-import faiss
+
 import os
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
