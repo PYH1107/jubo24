@@ -1,6 +1,6 @@
 from pymongo.mongo_client import MongoClient
 #from pymongo.server_api import ServerApi
-from fastapi import FastAPI, HTTPException,Depends
+from fastapi import FastAPI, HTTPException,Depends, Form
 from pydantic import BaseModel
 #from typing import List, Dict
 from datetime import datetime, timedelta
@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 import requests
 from auth0.auth import get_token_data
 from auth0.models import TokenData
+from fastapi.middleware.cors import CORSMiddleware
 
  
 # Load environment variables
@@ -31,6 +32,21 @@ uri = f"mongodb+srv://ai-nerag:{password}@ai-nerag.iiltl.mongodb.net/?retryWrite
  
 # Create a new client and connect to the server
 client = MongoClient(uri)
+
+
+# Allow CORS for specific origins
+origins = [
+    "http://localhost:3000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # Allow only specified origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
+)
+
  
 # Send a ping to confirm a successful connection
 try:
@@ -108,7 +124,22 @@ def extract_keywords(text, db):
     words = jieba.lcut(text)
     keywords = [word for word in words if word in db]
     return keywords
- 
+
+def relative_date_to_absolute(relative_date):
+    today = datetime.today()
+    if relative_date == "今天":
+        return today.strftime("%Y-%m-%d")
+    elif relative_date == "昨天" or relative_date == "昨日":
+        return (today - timedelta(days=1)).strftime("%Y-%m-%d")
+    elif relative_date == "大前天" or relative_date == "大前日":
+        #print("大前天")
+        return (today - timedelta(days=3)).strftime("%Y-%m-%d")
+    elif relative_date == "前天" or relative_date == "前日":
+        #print("前天")
+        return (today - timedelta(days=2)).strftime("%Y-%m-%d")
+    else:
+        return None
+        
 def extract_date(text):
     date_patterns = [
         r'\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b',  # MM-DD-YYYY or MM/DD/YYYY
@@ -118,21 +149,6 @@ def extract_date(text):
         r'\b民國(\d{1,3})年(\d{1,2})月(\d{1,2})日\b',  # 民國YYY年MM月DD日
         r'\b(\d{2,3})[-/](\d{1,2})[-/](\d{1,2})\b',  # YYY-MM-DD or YYY/MM/DD (民國年)
     ]
- 
-    def relative_date_to_absolute(relative_date):
-        today = datetime.today()
-        if relative_date == "今天":
-            return today.strftime("%Y-%m-%d")
-        elif relative_date == "昨天" or relative_date == "昨日":
-            return (today - timedelta(days=1)).strftime("%Y-%m-%d")
-        elif relative_date == "大前天" or relative_date == "大前日":
-            #print("大前天")
-            return (today - timedelta(days=3)).strftime("%Y-%m-%d")
-        elif relative_date == "前天" or relative_date == "前日":
-            #print("前天")
-            return (today - timedelta(days=2)).strftime("%Y-%m-%d")
-        else:
-            return None
  
     dates = []
     for pattern in date_patterns:
@@ -368,6 +384,8 @@ def NERAG(text):
     keywords = extract_keywords(text, DB) #得到關鍵字
     person_names_str = ", ".join(person_names)
     print("person_names:" + person_names_str)
+    
+    print("person_names:" + person_names_str)
  
     if len(dates) >= 2:
         start_date, end_date = dates[0], dates[-1]
@@ -375,12 +393,14 @@ def NERAG(text):
         start_date = end_date = dates[0]
     else:
         return "No valid date found in the text."
- 
+    
     patient_id = read_patients_info()
+    
     if patient_id:
         text_description = []
         if "生命跡象" in keywords:
             text_description.extend(read_vital_signs(patient_id, dates[0], dates[1]))
+            
         if "護理紀錄" in keywords:
             text_description.extend(read_nursingnote(patient_id, dates[0], dates[1]))
             text_description.extend(read_nursingnotedetails(patient_id, dates[0], dates[1]))
@@ -389,6 +409,7 @@ def NERAG(text):
         if not text_description :
             print("All info not find")
             return "All patient info does not find in date range."
+        
         else:
             # 生成摘要
             summary = generate_summary(text_description, start_date, end_date)
@@ -412,27 +433,28 @@ async def get_home():
 from linkinpark.lib.common.fastapi_middleware import FastAPIMiddleware
 app.add_middleware(FastAPIMiddleware, path_prefix="/ai-ncopilot-ner")
  
-class TextInput(BaseModel):
-    input_text: str
+ 
  
  
 @app.post("/ai-ncopilot-ner/summary")
-async def api_extract_entities(input: TextInput, token_data: TokenData = Depends(get_token_data)):
-    if not input.input_text:
+async def api_extract_entities(user_input: str = Form(...), token_data: TokenData = Depends(get_token_data)):
+    if not user_input:
         raise HTTPException(status_code=400, detail="Text input is required")
  
-    results = predict_and_extract_entities(input.input_text, tokenizer, model)
+    results = predict_and_extract_entities(user_input, tokenizer, model)
     person_names = extract_entities(results, 'PER')
-    print("input:"+ input.input_text)
+    print("input:"+ user_input)
     #dates = extract_date(input.text)
-    keywords = extract_keywords(input.input_text, DB)
+    keywords = extract_keywords(user_input, DB)
  
     name_parts = [extract_name_parts(name) for name in person_names]
  
-    result = NERAG(input.input_text)
+    result = NERAG(user_input)
  
     if "Failed to generate summary" in result:
         raise HTTPException(status_code=404, detail="Failed to generate summary or no data found.")
+    
+    print(result)
  
     return {
        # "from_date": from_date,
