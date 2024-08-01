@@ -434,7 +434,8 @@ from linkinpark.lib.common.fastapi_middleware import FastAPIMiddleware
 app.add_middleware(FastAPIMiddleware, path_prefix="/ai-ncopilot-ner")
  
  
- 
+class InputModel(BaseModel):
+    user_input: str
  
 @app.post("/ai-ncopilot-ner/summary")
 async def api_extract_entities(user_input: str = Form(...), token_data: TokenData = Depends(get_token_data)):
